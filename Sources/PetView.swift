@@ -53,7 +53,7 @@ struct PetView: View {
         .onChange(of: state.action) { _, newValue in
             if newValue == .walk {
                 walkBob = false
-                withAnimation(.easeInOut(duration: 0.30).repeatForever(autoreverses: true)) {
+                withAnimation(.easeInOut(duration: 0.24).repeatForever(autoreverses: true)) {
                     walkBob = true
                 }
             } else {
@@ -124,7 +124,7 @@ struct PetView: View {
                 y: 1 - (breathe ? 0.03 : -0.03) - squash * 0.22,
                 anchor: .bottom
             )
-            .offset(y: (walkBob ? -4 : 0) + hopOffset)
+            .offset(y: (walkBob ? -8 : 0) + hopOffset)   // bouncy trot
         }
         .frame(width: 180, height: 160)
         .padding(.bottom, 4)
