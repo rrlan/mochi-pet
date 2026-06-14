@@ -6,6 +6,8 @@
 
 <img src="assets/mochi-hello.png" width="460" alt="默认薄荷史莱姆，以及换成自定义猫咪形象的样子"/>
 
+<img src="assets/mochi-demo.gif" width="340" alt="Mochi 运行演示：会话气泡随 agent 工作出现、切换活动、完成变暗，点击可跳回会话"/>
+
 默认纯代码绘制 · 形象可更换 · 无需完整 Xcode · 原生、几 MB 内存
 
 </div>
