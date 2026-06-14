@@ -254,10 +254,12 @@ struct AgentStatusBubble: View {
             Text(bubble.title)
                 .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 128, alignment: .leading)   // cap so the activity stays visible
             Text(bubble.detail)
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
-                .layoutPriority(-1)
+                .truncationMode(.tail)
             Spacer(minLength: 0)
             if bubble.requiresApproval {
                 Text("允许")

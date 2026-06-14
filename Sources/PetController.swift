@@ -742,6 +742,10 @@ final class PetController {
                                           sessionID: $0.sessionID,
                                           requiresApproval: $0.requiresApproval)
         }
+        // Hover tooltip: show each bubble's full title + activity, so a long
+        // title that gets truncated in the bubble is still readable on hover.
+        window?.container.toolTip = state.workBubbles.isEmpty ? nil
+            : state.workBubbles.map { "\($0.title) · \($0.detail)" }.joined(separator: "\n")
     }
 
     private func displayName(for source: String) -> String {

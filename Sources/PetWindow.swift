@@ -140,6 +140,7 @@ final class PetWindow: NSPanel {
         hidesOnDeactivate = false       // stay visible even though we never activate
         becomesKeyOnlyIfNeeded = true
         isMovableByWindowBackground = false  // we handle dragging ourselves
+        acceptsMouseMovedEvents = true       // so bubble hover tooltips fire
 
         isOpaque = false
         backgroundColor = .clear
