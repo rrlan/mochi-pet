@@ -1,0 +1,16 @@
+# Build output
+build/
+*.app
+
+# macOS
+.DS_Store
+
+# Swift / Xcode (in case anyone opens it in Xcode later)
+.build/
+*.xcodeproj/xcuserdata/
+*.swiftpm
+DerivedData/
+
+# Editor
+.vscode/
+.idea/
