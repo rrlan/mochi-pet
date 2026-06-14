@@ -245,27 +245,67 @@ final class PetController {
         try? process.run()
     }
 
-    // MARK: - AI conversation (P4)
+    // MARK: - AI conversation (P4 + multi-turn memory)
 
-    /// Send the user's message to the AI CLI and show the reply in a bubble.
+    private var history: [(user: String, mochi: String)] = []
+    private var lastChatAt: Date?
+    private let maxTurns = 8
+    private let conversationTTL: TimeInterval = 600   // forget after 10 min idle
+
+    /// Send the user's message to the AI CLI (with recent context) and show the
+    /// reply in a bubble.
     func ask(_ text: String) {
         stopWalk()
         if isSleeping { isSleeping = false }
+
+        // Start a fresh conversation if the last one went stale.
+        if let last = lastChatAt, Date().timeIntervalSince(last) > conversationTTL {
+            history.removeAll()
+        }
+
         isBusy = true
         startThinking()
 
-        AIService(engine: engine).ask(text) { [weak self] result in
+        AIService(engine: engine).ask(buildPrompt(for: text)) { [weak self] result in
             guard let self = self else { return }
             self.stopThinking()
             self.isBusy = false
             self.state.action = .idle
             switch result {
             case .success(let reply):
+                self.history.append((user: text, mochi: reply))
+                if self.history.count > self.maxTurns {
+                    self.history.removeFirst(self.history.count - self.maxTurns)
+                }
+                self.lastChatAt = Date()
                 self.say(self.shorten(reply), duration: 10)
             case .failure(let err):
                 self.say(self.message(for: err), duration: 6)
             }
         }
+    }
+
+    /// Clear the conversation so Mochi starts fresh.
+    func clearHistory() {
+        history.removeAll()
+        lastChatAt = nil
+        say("好的，刚才的都忘啦~ 🧹", duration: 2.5)
+    }
+
+    private static let persona = "你是用户 macOS 桌面上一只叫 Mochi 的可爱小宠物。"
+        + "请用中文、1 到 2 句话、简短俏皮地回应，可以用一点 emoji。"
+        + "不要用列表、不要长篇大论、不要解释你是 AI。"
+
+    private func buildPrompt(for text: String) -> String {
+        guard !history.isEmpty else {
+            return PetController.persona + "\n用户说：\(text)"
+        }
+        var convo = PetController.persona + "\n以下是你和主人最近的对话：\n"
+        for turn in history {
+            convo += "用户：\(turn.user)\nMochi：\(turn.mochi)\n"
+        }
+        convo += "用户现在说：\(text)\n请作为 Mochi 简短回应："
+        return convo
     }
 
     private func startThinking() {

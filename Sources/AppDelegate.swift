@@ -80,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(withTitle: "跟 Mochi 说话…", action: #selector(chatAction), keyEquivalent: "")
+        menu.addItem(withTitle: "忘掉刚才的对话", action: #selector(clearHistoryAction), keyEquivalent: "")
         menu.addItem(withTitle: "戳一下 Mochi", action: #selector(pokeAction), keyEquivalent: "")
         menu.addItem(withTitle: "睡觉 / 起床", action: #selector(sleepAction), keyEquivalent: "")
         menu.addItem(withTitle: "隐藏 / 显示", action: #selector(toggleVisibleAction), keyEquivalent: "")
@@ -107,6 +108,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func chatAction() {
         openChat()
+    }
+
+    @objc private func clearHistoryAction() {
+        controller.clearHistory()
     }
 
     @objc private func selectEngineAction(_ sender: NSMenuItem) {

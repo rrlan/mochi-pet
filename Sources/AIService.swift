@@ -42,14 +42,10 @@ struct AIService {
     var engine: AIEngine
     var timeout: TimeInterval = 120
 
-    /// Ask the AI a question off the main thread; the completion is always
-    /// delivered back on the main thread.
-    func ask(_ userText: String, completion: @escaping (Result<String, AIError>) -> Void) {
-        let prompt = """
-        你是用户 macOS 桌面上一只叫 Mochi 的可爱小宠物。请用中文、1 到 2 句话、\
-        简短俏皮地回应用户，可以用一点 emoji。不要用列表，不要长篇大论，不要解释你是 AI。\
-        用户说：\(userText)
-        """
+    /// Run the AI CLI with the given (fully-built) prompt off the main thread;
+    /// the completion is always delivered back on the main thread. The caller
+    /// owns prompt construction (persona, conversation history, etc.).
+    func ask(_ prompt: String, completion: @escaping (Result<String, AIError>) -> Void) {
         let engine = self.engine
         let timeout = self.timeout
 
