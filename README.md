@@ -2,11 +2,11 @@
 
 # 🍡 Mochi — a tiny desktop pet for macOS
 
-**A cute, code-drawn companion that lives on your desktop — and (soon) pairs with Claude Code & Codex.**
+**A cute desktop companion for macOS that mirrors your Claude Code & Codex sessions — and you can swap how it looks.**
 
-<img src="assets/mochi-hello.png" width="280" alt="Mochi saying hello"/>
+<img src="assets/mochi-hello.png" width="460" alt="Mochi's code-drawn default look next to a custom cat appearance"/>
 
-No image assets · No Xcode required · ~Native, a few MB of RAM
+Code-drawn by default · Swappable looks · No Xcode required · ~Native, a few MB of RAM
 
 [Features](#features) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Roadmap](#roadmap) · [中文](#中文简介)
 
@@ -19,13 +19,13 @@ No image assets · No Xcode required · ~Native, a few MB of RAM
 - 🟢 **Lives on your desktop** — a borderless, transparent, always-on-top window that floats above your other apps without stealing focus.
 - 😴 **Has a life of its own** — breathes, blinks, strolls around, hops, looks around, and naps.
 - 🖱️ **Interactive** — drag Mochi anywhere (it remembers where you left it); poke it and it reacts; or have it **follow your cursor**.
-- 🎨 **Custom appearances** — use the built-in Mochi shape, import your own images, or generate a multi-state appearance pack from a few reference images.
+- 🎨 **Swappable looks** — use the built-in code-drawn Mochi, import your own images, or generate a multi-state appearance pack from a few reference images.
 - 🧰 **Menu-bar controlled** — a 🍡 icon lets you poke it, put it to sleep, hide it, or quit.
-- 🤖 **Jumps to Claude / Codex** — double-click Mochi to pick Claude/Codex, open memos, or type a memo immediately.
-- 📝 **Quick memos** — capture a short note into Apple Notes.
+- 🤖 **Mirrors your AI sessions** — shows a bubble for each running Claude Code / Codex session with what it's doing; **click one to jump straight back to that session**.
+- 📝 **Quick memos** — double-click Mochi for an action panel (open an app, jot a note into Apple Notes).
 - ⚙️ **No full Xcode needed** — builds with the Command Line Tools via a single `swiftc` invocation.
 
-> **The bigger idea:** Mochi is the *face of your AI coding sessions*. Chatting already works; next it will react to live agent activity — animating while an agent runs and notifying you when it finishes. See the [roadmap](#roadmap).
+> **The bigger idea:** Mochi is the *face of your AI coding sessions* — it shows what each running agent is doing and lets you click straight back to any session, even for a few minutes after it finishes. See the [roadmap](#roadmap).
 
 ## Quick start
 
@@ -54,6 +54,7 @@ To quit: use the menu-bar 🍡 → **退出 Mochi**, or `pkill -x Mochi`.
 | --- | --- |
 | Move Mochi | Click & drag it (its position is remembered) |
 | Poke it | Click it once (or menu → 戳一下) |
+| Jump to a running session | Click that session's status bubble above Mochi |
 | Pick an action | Double-click Mochi |
 | Open Codex | Double-click Mochi → Codex, or menu → 打开 Codex |
 | Open Claude | Menu → 打开 Claude |
@@ -72,7 +73,8 @@ Memos are appended to an Apple Notes note named `Mochi Memos`. Mochi does not se
 ## Custom appearances
 
 Mochi can swap its desktop body for a custom appearance pack while keeping the
-same window, speech bubble, dragging, double-click chat, and agent awareness.
+same window, speech bubble, dragging, double-click action panel, and agent
+awareness.
 
 The app supports five image slots:
 
@@ -122,11 +124,13 @@ surfaces — CLI, ACP, **and the desktop apps (Claude Code desktop, Codex App)**
 which do not fire shell hooks. (CPU can't be used — LLM generation is
 network-bound, near-zero CPU.)
 
-Mochi parses the latest transcript entry and shows **what the agent is doing**
-right now — e.g. `🟢 codex · 运行 swift build`, `🟣 claude · 编辑 PetView.swift`,
-or `💬 …` for a message. Claude and Codex are tracked separately (distinct
-colored dots), so when both run at once you see a line for each and Mochi stays
-busy until both finish.
+Mochi shows one bubble per running session, labeled with its **project folder**
+and a colored dot (🟠 Claude, 🔵 Codex) plus **what the agent is doing** right
+now — e.g. `desk-pet · 运行 swift build` or `mochi · 编辑 PetView.swift`.
+**Click a session's bubble to jump straight back to it** (`claude://resume` /
+`codex://threads`); a finished session's bubble stays clickable for a few
+minutes. Claude and Codex are tracked separately, so when both run at once you
+see a bubble for each and Mochi stays busy until both finish.
 
 Toggle it from the menu: **感知 AI 工作**. Caveat: Claude Code's *sandboxed*
 desktop mode (Cowork) may write its transcript inside the sandbox rather than to
@@ -219,8 +223,8 @@ Design principles:
   - [ ] Further multi-monitor polish; sit on window edges / gravity.
 - [ ] **P3 — Companion:** reminders (water / breaks / pomodoro / hourly chime) shown as speech bubbles + notifications.
 - [ ] **P4 — AI pairing (the headline feature):**
-  - [x] Jump to Claude / Codex desktop apps from Mochi.
-  - [x] React to live agent activity — busy while an agent runs, celebrate + notify when it finishes (via the `mochi` CLI + hooks).
+  - [x] Jump to the *exact* Claude / Codex session from Mochi's bubbles via deep links (not just the app).
+  - [x] React to live agent activity — a bubble per running session showing what it's doing; celebrate + notify when it finishes; finished sessions stay clickable for a few minutes.
   - [x] Quick local memos.
 - [x] **Skinning:** import custom multi-state appearance images; generate a draft pack from limited references.
 - [ ] **Packaging:** signed/notarized release, Homebrew cask.
@@ -237,9 +241,9 @@ Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Good first co
 
 ## 中文简介
 
-**Mochi 是一只用纯代码画出来的 macOS 桌面小宠物** —— 一个透明、置顶、不抢焦点的小浮窗，会呼吸、眨眼、在桌面上溜达、睡觉；你可以拖它、戳它，它会有反应。整只宠物是 SwiftUI 矢量图形，没有任何图片素材，所以体积极小、换皮极简单。
+**Mochi 是一只 macOS 桌面小宠物** —— 一个透明、置顶、不抢焦点的小浮窗，会呼吸、眨眼、在桌面上溜达、睡觉；你可以拖它、戳它，它会有反应。默认形象是 SwiftUI 纯矢量图形（零图片素材、体积极小），也可以一键换成你自己的形象包。
 
-它的长期目标是成为**你 AI 编程会话的"具象化分身"**：当 Claude Code / Codex 在思考时它会有反应，跑完任务会提醒你，你还能通过头顶气泡直接跟它们对话（见上方 Roadmap 的 P4）。
+它是**你 AI 编程会话的"具象化分身"**：每个在跑的 Claude Code / Codex 会话都会在它头顶显示一个气泡（写着项目名 + 正在干什么），**点一下气泡就能跳回那条会话**；跑完后气泡还会保留几分钟、仍可点。双击宠物则弹出动作面板（打开 App、记备忘）。
 
 **构建无需完整 Xcode**，只要 Command Line Tools：
 
