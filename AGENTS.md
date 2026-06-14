@@ -1,6 +1,5 @@
 # Mochi (desk-pet)
 
-> 战略规划与决策记录（人看的）：Obsidian `10_Projects/Mochi桌面宠物/`
 > 对外文档：`README.md`
 
 ## Project Overview
@@ -46,10 +45,8 @@ Sources/
 
 - 不直接 push 到 main；不动 CI 配置（暂无）。
 - 删文件 / 重置分支 / force push 前必须确认。
-- **实质产出（架构决策 / 路线变更 / 复盘）回写 vault** `10_Projects/Mochi桌面宠物/`：里程碑写 `journal/`，分叉拍板写 `decisions/`，并更新 MOC 的「下一步」和 `last_review`。
 
 ## Context
 
-- 战略与路线图：vault `10_Projects/Mochi桌面宠物/plan.md`
-- 历史决策：vault `10_Projects/Mochi桌面宠物/decisions/`
-- 可用 AI CLI（P4 联动）：`claude`、`codex`、桥接 `~/.agents/bin/claudecode`
+- Mochi 监听 `~/.claude/projects` 与 `~/.codex/sessions` 的会话 transcript 感知 agent 工作；点气泡用深链（`claude://resume?session=…` / `codex://threads/…`）跳回对应桌面 App 的会话。
+- 可显式联动的 AI CLI：`claude`、`codex`。
