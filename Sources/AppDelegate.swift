@@ -44,8 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Auto-detect working agents by watching their transcript files. Covers
         // CLI, ACP, and the desktop apps (which don't fire shell hooks).
-        monitor = AgentMonitor { [weak self] source, active in
-            self?.controller.handleBridgeEvent(type: active ? "busy" : "done", text: source)
+        monitor = AgentMonitor { [weak self] source, active, detail in
+            self?.controller.handleBridgeEvent(type: active ? "busy" : "done", text: source, detail: detail)
         }
         if UserDefaults.standard.object(forKey: monitorDefaultsKey) as? Bool ?? true {
             monitor.start()

@@ -80,8 +80,13 @@ A transcript that's actively growing means that agent is mid-turn; when it goes
 quiet, the turn is done. This is the **only** approach that works across *all*
 surfaces — CLI, ACP, **and the desktop apps (Claude Code desktop, Codex App)**,
 which do not fire shell hooks. (CPU can't be used — LLM generation is
-network-bound, near-zero CPU.) It tracks Claude and Codex separately, so if
-both run at once Mochi stays busy until both finish.
+network-bound, near-zero CPU.)
+
+Mochi parses the latest transcript entry and shows **what the agent is doing**
+right now — e.g. `🟢 codex · 运行 swift build`, `🟣 claude · 编辑 PetView.swift`,
+or `💬 …` for a message. Claude and Codex are tracked separately (distinct
+colored dots), so when both run at once you see a line for each and Mochi stays
+busy until both finish.
 
 Toggle it from the menu: **感知 AI 工作**. Caveat: Claude Code's *sandboxed*
 desktop mode (Cowork) may write its transcript inside the sandbox rather than to

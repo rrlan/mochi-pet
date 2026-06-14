@@ -261,19 +261,20 @@ final class PetController {
 
     // MARK: - External agent awareness (bridge events)
 
-    private var workTimer: Timer?
-    private var workTick = 0
     /// Coding agents currently working, by source label (e.g. "claude", "codex").
-    /// Mochi stays in "working" mode until this is empty — handling the case
-    /// where Claude Code and Codex run concurrently.
+    /// Mochi stays in "working" mode until this is empty — handling concurrent
+    /// Claude Code + Codex sessions.
     private var activeAgents: Set<String> = []
+    /// The latest "what is it doing" line per source (e.g. "运行 npm test").
+    private var agentDetail: [String: String] = [:]
     private var workStartedAt: Date?
 
-    /// Dispatch a one-line event from the `mochi` CLI / Claude Code / Codex hooks.
-    func handleBridgeEvent(type: String, text: String) {
+    /// Dispatch an event from the AgentMonitor, the `mochi` CLI, or hooks.
+    /// `detail` is the current activity line (from the monitor), if any.
+    func handleBridgeEvent(type: String, text: String, detail: String? = nil) {
         switch type {
         case "busy":
-            enterWork(source: text.isEmpty ? "agent" : text)
+            enterWork(source: text.isEmpty ? "agent" : text, detail: detail)
         case "done":
             finishWork(source: text.isEmpty ? "agent" : text)
         case "say":
@@ -290,25 +291,20 @@ final class PetController {
         }
     }
 
-    private func enterWork(source: String) {
+    private func enterWork(source: String, detail: String?) {
         wakeIfNeeded()
         stopWalk()
         if activeAgents.isEmpty { workStartedAt = Date() }
         activeAgents.insert(source)
+        if let detail = detail, !detail.isEmpty { agentDetail[source] = detail }
         isBusy = true
         state.action = .work
-        workTick = 0
-        state.speech = workBubble()
-        guard workTimer == nil else { return }
-        workTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.workTick += 1
-            self.state.speech = self.workBubble()
-        }
+        state.speech = composeWorkBubble()
     }
 
     private func finishWork(source: String) {
         activeAgents.remove(source)
+        agentDetail[source] = nil
         let label = (source == "agent") ? "" : "\(source) "
 
         // Only make noise for substantial work — skip quick back-and-forth turns.
@@ -320,25 +316,24 @@ final class PetController {
         }
 
         if activeAgents.isEmpty {
-            workTimer?.invalidate()
-            workTimer = nil
             isBusy = false
             workStartedAt = nil
             state.action = .idle
             state.pokeTrigger += 1                  // little celebratory bounce
             say(substantial ? "\(label)搞定！✅" : "好啦~", duration: substantial ? 6 : 2)
         } else {
-            // Others still working — refresh the bubble to the new count.
-            state.speech = workBubble()
+            // Others still working — refresh the bubble.
+            state.speech = composeWorkBubble()
         }
     }
 
-    private func workBubble() -> String {
-        if activeAgents.count >= 2 {
-            return "\(activeAgents.count) 个小助手在忙 🔥"
-        }
-        let cute = ["码字中…", "🔨 干活中", "🤔 想想…", "👀 看代码", "⌨️ ……"]
-        return cute[workTick % cute.count]
+    /// One line per active agent: "<dot> <source> · <what it's doing>".
+    private func composeWorkBubble() -> String {
+        guard !activeAgents.isEmpty else { return "干活中…" }
+        let dot = ["claude": "🟣", "codex": "🟢"]
+        return activeAgents.sorted().map { src in
+            "\(dot[src] ?? "🤖") \(src) · \(agentDetail[src] ?? "干活中…")"
+        }.joined(separator: "\n")
     }
 
     private func wakeIfNeeded() {
