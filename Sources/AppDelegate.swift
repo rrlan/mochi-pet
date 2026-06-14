@@ -16,7 +16,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: PetController!
     private var statusItem: NSStatusItem!
     private var actionPanel: ActionPanel!
-    private var memoPanel: MemoInputPanel!
     private var bridge: MochiBridge!
     private var monitor: AgentMonitor!
 
@@ -35,9 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         actionPanel.onOpenMemoFile = { [weak self] in self?.openMemoFile() }
         actionPanel.onSubmitMemo = { [weak self] text in self?.saveMemo(text) }
 
-        // Quick memo input.
-        memoPanel = MemoInputPanel()
-        memoPanel.onSubmit = { [weak self] text in self?.saveMemo(text) }
         controller.onDoubleClick = { [weak self] in self?.openActionPanel() }
 
         // Listen for events from the `mochi` CLI / Claude Code / Codex hooks.
@@ -66,10 +62,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openActionPanel() {
         actionPanel.present(above: window.frame)
-    }
-
-    private func openMemo() {
-        memoPanel.present(above: window.frame)
     }
 
     private func saveMemo(_ text: String) {
@@ -142,11 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "🍡"
 
+        // Opening Claude/Codex and memos live on the double-click action panel
+        // (and clicking a session bubble), so the menu stays focused on the pet.
         let menu = NSMenu()
-        menu.addItem(withTitle: "打开 Codex", action: #selector(openCodexAction), keyEquivalent: "")
-        menu.addItem(withTitle: "打开 Claude", action: #selector(openClaudeAction), keyEquivalent: "")
-        menu.addItem(withTitle: "快速备忘…", action: #selector(memoAction), keyEquivalent: "")
-        menu.addItem(withTitle: "打开备忘录", action: #selector(openMemoFileAction), keyEquivalent: "")
         menu.addItem(withTitle: "戳一下 Mochi", action: #selector(pokeAction), keyEquivalent: "")
         menu.addItem(withTitle: "跟随鼠标", action: #selector(toggleFollowAction(_:)), keyEquivalent: "")
 
@@ -170,22 +160,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.items.forEach { if $0.target == nil { $0.target = self } }
 
         statusItem.menu = menu
-    }
-
-    @objc private func openCodexAction() {
-        openCodex()
-    }
-
-    @objc private func openClaudeAction() {
-        openClaude()
-    }
-
-    @objc private func memoAction() {
-        openMemo()
-    }
-
-    @objc private func openMemoFileAction() {
-        openMemoFile()
     }
 
     @objc private func toggleFollowAction(_ sender: NSMenuItem) {
