@@ -16,7 +16,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = Path.home() / ".mochi/appearances"
-ASSET_OUT = ROOT / "assets/cat-appearance/final"
+ASSET_OUT = ROOT / "appearances/yangbaile"
 
 
 def parse_args() -> argparse.Namespace:
