@@ -246,9 +246,12 @@ final class PetController {
 
     func poke() {
         stopWalk()
-        // While an agent is working, a click jumps to the most recent session.
-        if isBusy, let source = lastActiveSource {
-            openAgentSession(source: source, sessionID: lastActiveSessionID)
+        // While agents are working, the status bubbles are the jump-to-session
+        // affordance — a body click must NOT jump or steal focus here. It also
+        // fires on the first click of a double-click, and stealing focus would
+        // break double-click → action panel. So just give a gentle bounce.
+        if isBusy {
+            state.pokeTrigger += 1
             return
         }
         if isSleeping {
