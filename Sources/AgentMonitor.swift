@@ -26,19 +26,31 @@ final class AgentMonitor {
         let root: URL
     }
 
-    /// (source, isActive, detail) — detail is the current activity line, or nil.
-    private let onChange: (_ source: String, _ active: Bool, _ detail: String?) -> Void
+    private struct Candidate {
+        let url: URL
+        let modifiedAt: TimeInterval
+    }
+
+    /// (source, sessionID, isActive, detail, task) — one visible bubble per
+    /// session; `task` is a short name for the session (its project folder).
+    private let onChange: (_ source: String, _ sessionID: String, _ active: Bool, _ detail: String?, _ task: String?) -> Void
     private let watches: [Watch]
     private let quietWindow: TimeInterval = 15
 
     private let queue = DispatchQueue(label: "com.yangran.mochi.agentmonitor", qos: .utility)
     private var running = false
 
-    private var newestSeen: [String: TimeInterval] = [:]
+    private var seenModifiedAt: [String: TimeInterval] = [:]
     private var lastGrowth: [String: TimeInterval] = [:]
+    private var sessionFiles: [String: URL] = [:]
     private var active: Set<String> = []
+    /// Cache of resolved "label:id" by file path — the id never changes, and
+    /// re-reading a multi-KB Codex meta line every tick would be wasteful.
+    private var sessionIDCache: [String: String] = [:]
+    /// Cache of a session's task name (project folder) by file path.
+    private var taskNameCache: [String: String] = [:]
 
-    init(onChange: @escaping (_ source: String, _ active: Bool, _ detail: String?) -> Void) {
+    init(onChange: @escaping (_ source: String, _ sessionID: String, _ active: Bool, _ detail: String?, _ task: String?) -> Void) {
         let home = FileManager.default.homeDirectoryForCurrentUser
         self.watches = [
             Watch(label: "claude", root: home.appendingPathComponent(".claude/projects")),
@@ -50,7 +62,11 @@ final class AgentMonitor {
     func start() {
         queue.async { [weak self] in
             guard let self = self else { return }
-            for w in self.watches { self.newestSeen[w.label] = self.newestFile(under: w.root).1 }
+            for w in self.watches {
+                for candidate in self.recentFiles(under: w.root) {
+                    self.seenModifiedAt[self.fileID(label: w.label, url: candidate.url)] = candidate.modifiedAt
+                }
+            }
             self.running = true
             self.scheduleTick()
         }
@@ -69,43 +85,125 @@ final class AgentMonitor {
     private func tick() {
         let now = Date().timeIntervalSince1970
         for w in watches {
-            let (url, mtime) = newestFile(under: w.root)
-            let prev = newestSeen[w.label] ?? 0
-            if mtime > prev + 0.001 {
-                newestSeen[w.label] = mtime
-                lastGrowth[w.label] = now
-                active.insert(w.label)
-                let detail = url.flatMap { activity(in: $0, label: w.label) }
-                emit(w.label, true, detail)        // emit on every growth → live detail
-            } else if active.contains(w.label),
-                      now - (lastGrowth[w.label] ?? 0) > quietWindow {
-                active.remove(w.label)
-                emit(w.label, false, nil)
+            for candidate in recentFiles(under: w.root) {
+                let fileID = fileID(label: w.label, url: candidate.url)
+                let sessionID = sessionID(label: w.label, url: candidate.url)
+                sessionFiles[sessionID] = candidate.url
+                let prev = seenModifiedAt[fileID] ?? 0
+                if candidate.modifiedAt > prev + 0.001 {
+                    seenModifiedAt[fileID] = candidate.modifiedAt
+                    lastGrowth[sessionID] = now
+                    active.insert(sessionID)
+                    let detail = activity(in: candidate.url, label: w.label)
+                    let task = taskName(label: w.label, url: candidate.url)
+                    emit(w.label, sessionID, true, detail, task)   // every growth → live detail
+                }
+            }
+
+            for sessionID in Array(active) where sessionID.hasPrefix(w.label + ":") {
+                if now - (lastGrowth[sessionID] ?? 0) > quietWindow {
+                    if let url = sessionFiles[sessionID],
+                       isProbablyWaitingForPermission(in: url, label: w.label) {
+                        emit(w.label, sessionID, true, "等你允许…", taskName(label: w.label, url: url))
+                        continue
+                    }
+                    active.remove(sessionID)
+                    emit(w.label, sessionID, false, nil, nil)
+                }
             }
         }
     }
 
-    private func emit(_ source: String, _ isActive: Bool, _ detail: String?) {
-        DispatchQueue.main.async { [onChange] in onChange(source, isActive, detail) }
+    private func emit(_ source: String, _ sessionID: String, _ isActive: Bool, _ detail: String?, _ task: String?) {
+        DispatchQueue.main.async { [onChange] in onChange(source, sessionID, isActive, detail, task) }
     }
 
-    // MARK: - Finding the newest transcript
+    // MARK: - Finding active transcripts
 
-    private func newestFile(under root: URL) -> (URL?, TimeInterval) {
+    private func recentFiles(under root: URL) -> [Candidate] {
         let fm = FileManager.default
         guard let en = fm.enumerator(at: root,
                                      includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                                     options: [.skipsHiddenFiles]) else { return (nil, 0) }
-        var best: URL?
-        var bestT: TimeInterval = 0
+                                     options: [.skipsHiddenFiles]) else { return [] }
+        let cutoff = Date().timeIntervalSince1970 - 120
+        var files: [Candidate] = []
         for case let url as URL in en {
             guard url.pathExtension == "jsonl",
                   let v = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
                   v.isRegularFile == true, let d = v.contentModificationDate else { continue }
             let t = d.timeIntervalSince1970
-            if t > bestT { bestT = t; best = url }
+            if t >= cutoff {
+                files.append(Candidate(url: url, modifiedAt: t))
+            }
         }
-        return (best, bestT)
+        return files.sorted { $0.modifiedAt > $1.modifiedAt }.prefix(8).map { $0 }
+    }
+
+    private func fileID(label: String, url: URL) -> String {
+        label + ":" + url.path
+    }
+
+    private func sessionID(label: String, url: URL) -> String {
+        if let cached = sessionIDCache[url.path] { return cached }
+        if let id = transcriptSessionID(in: url, label: label) {
+            let sid = label + ":" + id
+            sessionIDCache[url.path] = sid          // immutable → cache it
+            return sid
+        }
+        return fileID(label: label, url: url)        // meta not ready yet; retry next tick
+    }
+
+    private func transcriptSessionID(in url: URL, label: String) -> String? {
+        // Both Claude and Codex put the id on the very first line. We must read
+        // the *whole* first line: Codex's `session_meta` (with base_instructions
+        // + dynamic_tools) can exceed 34 KB, so a fixed-size head read would
+        // truncate it mid-JSON and silently fail to parse.
+        guard let line = firstLine(of: url), let o = obj(line) else { return nil }
+        if label == "claude", let id = o["sessionId"] as? String, !id.isEmpty {
+            return id
+        }
+        if label == "codex",
+           o["type"] as? String == "session_meta",
+           let payload = o["payload"] as? [String: Any],
+           let id = payload["id"] as? String,
+           !id.isEmpty {
+            return id
+        }
+        return nil
+    }
+
+    /// A short, human-friendly name for a session: its working-directory's
+    /// folder name (e.g. "desk-pet"). Cached — the cwd never changes per file.
+    private func taskName(label: String, url: URL) -> String? {
+        if let cached = taskNameCache[url.path] { return cached }
+        let cwd: String?
+        if label == "codex" {
+            cwd = firstLine(of: url)
+                .flatMap { obj($0) }
+                .flatMap { ($0["payload"] as? [String: Any])?["cwd"] as? String }
+        } else {
+            cwd = claudeCwd(in: url)
+        }
+        guard let cwd = cwd, !cwd.isEmpty else { return nil }   // meta not ready → retry next tick
+        let name = (cwd as NSString).lastPathComponent
+        guard !name.isEmpty else { return nil }
+        taskNameCache[url.path] = name
+        return name
+    }
+
+    /// Claude's first line (a `queue-operation`) has no `cwd`; it appears on the
+    /// first real message. Lines are small, so a single head read covers them.
+    private func claudeCwd(in url: URL) -> String? {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? h.close() }
+        let data = (try? h.read(upToCount: 65_536)) ?? Data()
+        guard let s = String(data: data, encoding: .utf8) else { return nil }
+        for line in s.split(separator: "\n", omittingEmptySubsequences: true).prefix(40) {
+            if let o = obj(String(line)), let cwd = o["cwd"] as? String, !cwd.isEmpty {
+                return cwd
+            }
+        }
+        return nil
     }
 
     // MARK: - Activity parsing
@@ -127,6 +225,23 @@ final class AgentMonitor {
         var lines = s.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
         if start > 0, !lines.isEmpty { lines.removeFirst() }   // drop partial first line
         return lines
+    }
+
+    /// Read the first complete line (up to the first newline), reading in chunks
+    /// so an arbitrarily large first line — e.g. Codex's session_meta — is never
+    /// truncated mid-JSON. `hardCap` bounds the read if a file has no newline.
+    private func firstLine(of url: URL, hardCap: Int = 1_048_576) -> String? {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? h.close() }
+        var buffer = Data()
+        while buffer.count < hardCap {
+            guard let chunk = try? h.read(upToCount: 65_536), !chunk.isEmpty else { break }
+            buffer.append(chunk)
+            if let nl = buffer.firstIndex(of: 0x0A) {            // 0x0A == "\n"
+                return String(data: buffer[..<nl], encoding: .utf8)
+            }
+        }
+        return buffer.isEmpty ? nil : String(data: buffer, encoding: .utf8)
     }
 
     private func obj(_ line: String) -> [String: Any]? {
@@ -194,6 +309,75 @@ final class AgentMonitor {
             }
         }
         return nil
+    }
+
+    /// If a transcript went quiet immediately after an agent requested a tool,
+    /// the desktop app is often waiting for the user's permission. We keep the
+    /// bubble visible so Mochi can act as the approval target.
+    private func isProbablyWaitingForPermission(in url: URL, label: String) -> Bool {
+        let lines = tailLines(of: url)
+        return label == "codex"
+            ? codexHasPendingPermission(lines)
+            : claudeHasPendingPermission(lines)
+    }
+
+    private func codexHasPendingPermission(_ lines: [String]) -> Bool {
+        for line in lines.reversed() {
+            guard let o = obj(line) else { continue }
+            let payload = o["payload"] as? [String: Any] ?? o
+            guard let type = payload["type"] as? String else { continue }
+            switch type {
+            case "function_call", "custom_tool_call":
+                let name = payload["name"] as? String ?? ""
+                return codexToolNeedsPermission(name)
+            case "function_call_output", "custom_tool_call_output", "patch_apply_end":
+                return false
+            case "message", "agent_message":
+                return false
+            default:
+                continue
+            }
+        }
+        return false
+    }
+
+    private func codexToolNeedsPermission(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower == "exec_command"
+            || lower == "shell"
+            || lower == "local_shell_call"
+            || lower.contains("patch")
+            || lower.contains("apply")
+    }
+
+    private func claudeHasPendingPermission(_ lines: [String]) -> Bool {
+        for line in lines.reversed() {
+            guard let o = obj(line), let type = o["type"] as? String else { continue }
+            if type == "user", claudeUserHasToolResult(o) { return false }
+            guard type == "assistant",
+                  let msg = o["message"] as? [String: Any],
+                  let content = msg["content"] as? [[String: Any]] else { continue }
+            for c in content where c["type"] as? String == "tool_use" {
+                return claudeToolNeedsPermission(c["name"] as? String ?? "")
+            }
+            return false
+        }
+        return false
+    }
+
+    private func claudeUserHasToolResult(_ object: [String: Any]) -> Bool {
+        guard let msg = object["message"] as? [String: Any],
+              let content = msg["content"] as? [[String: Any]] else { return false }
+        return content.contains { $0["type"] as? String == "tool_result" }
+    }
+
+    private func claudeToolNeedsPermission(_ name: String) -> Bool {
+        switch name {
+        case "Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch":
+            return true
+        default:
+            return false
+        }
     }
 
     private func codexCmd(_ arguments: Any?) -> String {

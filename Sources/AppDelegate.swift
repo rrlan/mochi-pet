@@ -8,38 +8,37 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let state = PetState()
     private var window: PetWindow!
     private var controller: PetController!
     private var statusItem: NSStatusItem!
-    private var chatPanel: ChatInputPanel!
+    private var actionPanel: ActionPanel!
+    private var memoPanel: MemoInputPanel!
     private var bridge: MochiBridge!
     private var monitor: AgentMonitor!
 
-    private let engineDefaultsKey = "MochiAIEngine"
     private let monitorDefaultsKey = "MochiSenseAgents"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        state.customAppearances = AppearanceStore.loadAll()
+        state.customWalkFrames = AppearanceStore.loadWalkFrames()
         setupWindow()
         controller = PetController(window: window, state: state)
 
-        // Restore the saved AI engine choice.
-        if let raw = UserDefaults.standard.string(forKey: engineDefaultsKey),
-           let saved = AIEngine(rawValue: raw) {
-            controller.engine = saved
-        }
+        // Double-click action picker.
+        actionPanel = ActionPanel()
+        actionPanel.onOpenClaude = { [weak self] in self?.openClaude() }
+        actionPanel.onOpenCodex = { [weak self] in self?.openCodex() }
+        actionPanel.onOpenMemoFile = { [weak self] in self?.openMemoFile() }
+        actionPanel.onSubmitMemo = { [weak self] text in self?.saveMemo(text) }
 
-        // Talking to Mochi.
-        chatPanel = ChatInputPanel()
-        chatPanel.onSubmit = { [weak self] text, engine in
-            guard let self = self else { return }
-            self.controller.engine = engine
-            UserDefaults.standard.set(engine.rawValue, forKey: self.engineDefaultsKey)
-            self.controller.ask(text)
-        }
-        controller.onRequestChat = { [weak self] in self?.openChat() }
+        // Quick memo input.
+        memoPanel = MemoInputPanel()
+        memoPanel.onSubmit = { [weak self] text in self?.saveMemo(text) }
+        controller.onDoubleClick = { [weak self] in self?.openActionPanel() }
 
         // Listen for events from the `mochi` CLI / Claude Code / Codex hooks.
         bridge = MochiBridge { [weak self] type, text in
@@ -49,8 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Auto-detect working agents by watching their transcript files. Covers
         // CLI, ACP, and the desktop apps (which don't fire shell hooks).
-        monitor = AgentMonitor { [weak self] source, active, detail in
-            self?.controller.handleBridgeEvent(type: active ? "busy" : "done", text: source, detail: detail)
+        monitor = AgentMonitor { [weak self] source, sessionID, active, detail, task in
+            self?.controller.handleBridgeEvent(type: active ? "busy" : "done",
+                                               text: source,
+                                               detail: detail,
+                                               sessionID: sessionID,
+                                               task: task)
         }
         if UserDefaults.standard.object(forKey: monitorDefaultsKey) as? Bool ?? true {
             monitor.start()
@@ -58,12 +61,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         controller.start()
         setupStatusItem()
-        controller.say("你好! 我是 Mochi 🍡 双击我聊天", duration: 4.0)
+        controller.say("双击我选动作", duration: 4.0)
     }
 
-    private func openChat() {
-        chatPanel.engine = controller.engine
-        chatPanel.present(above: window.frame)
+    private func openActionPanel() {
+        actionPanel.present(above: window.frame)
+    }
+
+    private func openMemo() {
+        memoPanel.present(above: window.frame)
+    }
+
+    private func saveMemo(_ text: String) {
+        do {
+            try MemoStore.append(text)
+            controller.say("记下啦", duration: 2.5)
+        } catch {
+            controller.say("备忘录写入失败，请看权限", duration: 4)
+        }
+    }
+
+    private func openClaude() {
+        controller.openAgentApp(.claude)
+    }
+
+    private func openCodex() {
+        controller.openAgentApp(.codex)
+    }
+
+    private func openMemoFile() {
+        MemoStore.open()
     }
 
     /// Last saved origin, but only if it's visible on a currently-connected
@@ -116,10 +143,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.title = "🍡"
 
         let menu = NSMenu()
-        menu.addItem(withTitle: "跟 Mochi 说话…", action: #selector(chatAction), keyEquivalent: "")
-        menu.addItem(withTitle: "忘掉刚才的对话", action: #selector(clearHistoryAction), keyEquivalent: "")
+        menu.addItem(withTitle: "打开 Codex", action: #selector(openCodexAction), keyEquivalent: "")
+        menu.addItem(withTitle: "打开 Claude", action: #selector(openClaudeAction), keyEquivalent: "")
+        menu.addItem(withTitle: "快速备忘…", action: #selector(memoAction), keyEquivalent: "")
+        menu.addItem(withTitle: "打开备忘录", action: #selector(openMemoFileAction), keyEquivalent: "")
         menu.addItem(withTitle: "戳一下 Mochi", action: #selector(pokeAction), keyEquivalent: "")
         menu.addItem(withTitle: "跟随鼠标", action: #selector(toggleFollowAction(_:)), keyEquivalent: "")
+
+        let appearanceItem = NSMenuItem(title: "形象", action: nil, keyEquivalent: "")
+        let appearanceMenu = NSMenu()
+        appearanceMenu.addItem(withTitle: "导入形态图片…", action: #selector(importAppearancesAction), keyEquivalent: "")
+        appearanceMenu.addItem(withTitle: "打开形态文件夹", action: #selector(openAppearancesFolderAction), keyEquivalent: "")
+        appearanceMenu.addItem(withTitle: "恢复默认 Mochi", action: #selector(resetAppearanceAction), keyEquivalent: "")
+        appearanceItem.submenu = appearanceMenu
+        menu.addItem(appearanceItem)
 
         let senseItem = NSMenuItem(title: "感知 AI 工作", action: #selector(toggleSenseAction(_:)), keyEquivalent: "")
         senseItem.state = (UserDefaults.standard.object(forKey: monitorDefaultsKey) as? Bool ?? true) ? .on : .off
@@ -128,20 +165,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "睡觉 / 起床", action: #selector(sleepAction), keyEquivalent: "")
         menu.addItem(withTitle: "隐藏 / 显示", action: #selector(toggleVisibleAction), keyEquivalent: "")
 
-        // AI engine submenu.
-        let engineItem = NSMenuItem(title: "AI 引擎", action: nil, keyEquivalent: "")
-        let engineMenu = NSMenu()
-        for engine in AIEngine.allCases {
-            let item = NSMenuItem(title: engine.displayName,
-                                  action: #selector(selectEngineAction(_:)), keyEquivalent: "")
-            item.representedObject = engine.rawValue
-            item.state = (controller.engine == engine) ? .on : .off
-            item.target = self
-            engineMenu.addItem(item)
-        }
-        engineItem.submenu = engineMenu
-        menu.addItem(.separator())
-        menu.addItem(engineItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 Mochi", action: #selector(quitAction), keyEquivalent: "q")
         menu.items.forEach { if $0.target == nil { $0.target = self } }
@@ -149,12 +172,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc private func chatAction() {
-        openChat()
+    @objc private func openCodexAction() {
+        openCodex()
     }
 
-    @objc private func clearHistoryAction() {
-        controller.clearHistory()
+    @objc private func openClaudeAction() {
+        openClaude()
+    }
+
+    @objc private func memoAction() {
+        openMemo()
+    }
+
+    @objc private func openMemoFileAction() {
+        openMemoFile()
     }
 
     @objc private func toggleFollowAction(_ sender: NSMenuItem) {
@@ -171,14 +202,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.say(on ? "我会盯着你的 AI 啦 👀" : "好，不盯了", duration: 2.5)
     }
 
-    @objc private func selectEngineAction(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              let engine = AIEngine(rawValue: raw) else { return }
-        controller.engine = engine
-        UserDefaults.standard.set(raw, forKey: engineDefaultsKey)
-        // Refresh checkmarks.
-        sender.menu?.items.forEach { $0.state = ($0 === sender) ? .on : .off }
-        controller.say("好的，改用 \(engine.displayName) 啦", duration: 2.5)
+    @objc private func importAppearancesAction() {
+        let panel = NSOpenPanel()
+        panel.title = "选择 Mochi 的形态图片"
+        panel.message = "可多选；文件名含 工作/休息/摸鱼/陪伴 会自动匹配，否则按顺序填入。"
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.png, .jpeg, .heic, .webP, .tiff, .gif]
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK else { return }
+
+        do {
+            let saved = try AppearanceStore.saveMany(from: panel.urls)
+            state.customAppearances.merge(saved) { _, new in new }
+            controller.say("形态包导入好啦~", duration: 2.5)
+        } catch {
+            controller.say("这些图我读不了 😣", duration: 3)
+        }
+    }
+
+    @objc private func openAppearancesFolderAction() {
+        try? FileManager.default.createDirectory(at: AppearanceStore.appearancesDir,
+                                                 withIntermediateDirectories: true)
+        NSWorkspace.shared.open(AppearanceStore.appearancesDir)
+    }
+
+    @objc private func resetAppearanceAction() {
+        AppearanceStore.clear()
+        state.customAppearances = [:]
+        state.customWalkFrames = []
+        controller.say("恢复默认 Mochi 啦", duration: 2.5)
     }
 
     @objc private func pokeAction() {

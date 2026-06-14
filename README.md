@@ -19,9 +19,10 @@ No image assets · No Xcode required · ~Native, a few MB of RAM
 - 🟢 **Lives on your desktop** — a borderless, transparent, always-on-top window that floats above your other apps without stealing focus.
 - 😴 **Has a life of its own** — breathes, blinks, strolls around, hops, looks around, and naps.
 - 🖱️ **Interactive** — drag Mochi anywhere (it remembers where you left it); poke it and it reacts; or have it **follow your cursor**.
-- 🎨 **Drawn entirely in code** — the character is pure SwiftUI vector shapes, so the whole app is a few MB and trivially restyleable. No sprite sheets to ship.
+- 🎨 **Custom appearances** — use the built-in Mochi shape, import your own images, or generate a multi-state appearance pack from a few reference images.
 - 🧰 **Menu-bar controlled** — a 🍡 icon lets you poke it, put it to sleep, hide it, or quit.
-- 🤖 **Talks to Claude Code / Codex** — double-click Mochi, type a message, and it routes to the `claude` or `codex` CLI and shows the reply in its speech bubble (with a "thinking" animation while it waits). Switch engines from the menu.
+- 🤖 **Jumps to Claude / Codex** — double-click Mochi to pick Claude/Codex, open memos, or type a memo immediately.
+- 📝 **Quick memos** — capture a short note into Apple Notes.
 - ⚙️ **No full Xcode needed** — builds with the Command Line Tools via a single `swiftc` invocation.
 
 > **The bigger idea:** Mochi is the *face of your AI coding sessions*. Chatting already works; next it will react to live agent activity — animating while an agent runs and notifying you when it finishes. See the [roadmap](#roadmap).
@@ -53,15 +54,54 @@ To quit: use the menu-bar 🍡 → **退出 Mochi**, or `pkill -x Mochi`.
 | --- | --- |
 | Move Mochi | Click & drag it (its position is remembered) |
 | Poke it | Click it once (or menu → 戳一下) |
-| **Chat with it** | **Double-click it** (or menu → 跟 Mochi 说话…), type, press Return |
+| Pick an action | Double-click Mochi |
+| Open Codex | Double-click Mochi → Codex, or menu → 打开 Codex |
+| Open Claude | Menu → 打开 Claude |
+| Quick memo | Double-click Mochi, type directly, press Return; or menu → 快速备忘… |
+| Open memos | Double-click Mochi → 备忘录, or menu → 打开备忘录 |
 | Follow the cursor | Menu → 跟随鼠标 (toggle) |
-| Forget the chat | Menu → 忘掉刚才的对话 |
-| Pick AI engine | Menu → AI 引擎 → Claude / Codex |
+| Import appearances | Menu → 形象 → 导入形态图片… |
+| Open appearance folder | Menu → 形象 → 打开形态文件夹 |
+| Reset appearance | Menu → 形象 → 恢复默认 Mochi |
 | Sleep / wake | Menu → 睡觉 / 起床 (or poke a sleeping Mochi) |
 | Hide / show | Menu → 隐藏 / 显示 |
 | Quit | Menu → 退出 Mochi |
 
-> **Chat requires** the `claude` and/or `codex` CLI on your `PATH`. Mochi invokes them through a login shell, so whatever works in your terminal works here. Replies are kept short and cute via a prompt wrapper.
+Memos are appended to an Apple Notes note named `Mochi Memos`. Mochi does not send memo text to any AI service.
+
+## Custom appearances
+
+Mochi can swap its desktop body for a custom appearance pack while keeping the
+same window, speech bubble, dragging, double-click chat, and agent awareness.
+
+The app supports five image slots:
+
+| Slot | Filename keywords | Used when |
+| --- | --- | --- |
+| `companion` | `陪伴`, `日常`, `默认`, `companion`, `idle` | Idle, walking, dragging, being poked |
+| `work` | `工作`, `干活`, `忙`, `思考`, `work`, `busy` | AI agents are working or Mochi is thinking |
+| `rest` | `休息`, `睡`, `困`, `rest`, `sleep` | Sleep mode |
+| `slack` | `摸鱼`, `偷懒`, `发呆`, `slack`, `lazy` | Short idle break moments |
+| `drag` | `拖拽`, `拖动`, `拎`, `站立`, `drag`, `stand` | While the pet is being dragged |
+
+To import images manually, choose **形象 → 导入形态图片…** from the menu and
+select one or more images. Mochi matches them by filename keywords; otherwise it
+fills the slots in order. Imported images are stored in `~/.mochi/appearances/`.
+
+To generate a pack from limited reference images, use the helper:
+
+```bash
+./tools/generate_appearance_pack.py \
+  --image /path/to/cat-photo-1.png \
+  --image /path/to/cat-photo-2.png \
+  --install
+```
+
+The helper creates `companion.png`, `work.png`, `rest.png`, `slack.png`, and
+`drag.png`, then installs them into `~/.mochi/appearances/` when `--install` is
+set. It uses the local Codex image-generation CLI if available and requires
+`OPENAI_API_KEY` for actual generation; without that key it prints a dry-run
+plan only.
 
 ## Pairing with Claude Code / Codex
 
@@ -158,8 +198,10 @@ Sources/
 ├── PetState.swift         # observable model the view renders from
 ├── PetController.swift     # the "brain": idle ↔ walk ↔ sleep ↔ think state machine
 ├── PetView.swift          # the SwiftUI character (blob, face, expressions, bubble)
-├── AIService.swift        # runs the claude / codex CLI off-main, returns the reply
-├── ChatInputPanel.swift   # the little floating text field you talk to Mochi with
+├── AppearanceStore.swift  # custom appearance import/storage
+├── ActionPanel.swift      # double-click action picker
+├── MemoInputPanel.swift   # the little floating text field for quick memos
+├── MemoStore.swift        # appends quick memos to Apple Notes
 ├── MochiBridge.swift      # watches ~/.mochi/inbox.log for events from hooks/CLI
 └── AgentMonitor.swift     # auto-detects working agents via their transcript files
 ```
@@ -167,7 +209,7 @@ Sources/
 Design principles:
 
 - **State is the single source of truth.** `PetController` mutates `PetState`; `PetView` is a pure function of it. Adding a behavior means adding a state + a way to render it.
-- **No assets.** The blob, face, and bubble are vector shapes — change `Palette` in `PetView.swift` to reskin.
+- **Built-in vector fallback.** The default blob, face, and bubble are vector shapes; custom appearance packs are optional user data stored outside the app bundle.
 - **Interaction lives in AppKit.** `PetContainerView.hitTest` claims mouse events so SwiftUI never fights over them; clicks vs. drags are distinguished by movement.
 
 ## Roadmap
@@ -177,10 +219,10 @@ Design principles:
   - [ ] Further multi-monitor polish; sit on window edges / gravity.
 - [ ] **P3 — Companion:** reminders (water / breaks / pomodoro / hourly chime) shown as speech bubbles + notifications.
 - [ ] **P4 — AI pairing (the headline feature):**
-  - [x] Talk to Mochi via a small input; route to the `claude` / `codex` CLIs and show replies in the bubble, with a "thinking" animation.
+  - [x] Jump to Claude / Codex desktop apps from Mochi.
   - [x] React to live agent activity — busy while an agent runs, celebrate + notify when it finishes (via the `mochi` CLI + hooks).
-  - [ ] Conversation memory / multi-turn context.
-- [ ] **Skinning:** swap the code-drawn character for custom sprites; a simple theme format.
+  - [x] Quick local memos.
+- [x] **Skinning:** import custom multi-state appearance images; generate a draft pack from limited references.
 - [ ] **Packaging:** signed/notarized release, Homebrew cask.
 
 ## Contributing

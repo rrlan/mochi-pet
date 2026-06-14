@@ -9,10 +9,16 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Mochi"
 APP="$ROOT/build/$APP_NAME.app"
 BIN="$APP/Contents/MacOS/$APP_NAME"
+ICON="$ROOT/assets/AppIcon.icns"
 
 echo "==> Cleaning previous build"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+
+if [[ ! -f "$ICON" ]]; then
+  echo "==> Generating app icon"
+  python3 "$ROOT/tools/generate_app_icon.py"
+fi
 
 echo "==> Compiling Swift sources"
 swiftc -O \
@@ -33,14 +39,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>0.1.0</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSUIElement</key><true/>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Mochi needs permission to add quick memos to Apple Notes.</string>
 </dict>
 </plist>
 PLIST
+
+echo "==> Copying app icon"
+cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 
 # Ad-hoc code-sign so macOS is happy launching it locally.
 echo "==> Ad-hoc signing"

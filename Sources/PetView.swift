@@ -72,14 +72,22 @@ struct PetView: View {
 
     private var speechBubbleArea: some View {
         ZStack {
-            if let text = state.speech {
+            if !state.workBubbles.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(state.workBubbles) { bubble in
+                        AgentStatusBubble(bubble: bubble)
+                    }
+                }
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+            } else if let text = state.speech {
                 SpeechBubble(text: text)
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
         }
-        .frame(height: 96)
+        .frame(height: 150)
         .frame(maxWidth: .infinity)
         .animation(.spring(response: 0.32, dampingFraction: 0.6), value: state.speech)
+        .animation(.spring(response: 0.32, dampingFraction: 0.6), value: state.workBubbles)
     }
 
     // MARK: Body
@@ -95,14 +103,20 @@ struct PetView: View {
                 .scaleEffect(x: breathe ? 1.05 : 0.95, anchor: .center)
 
             ZStack {
-                BlobShape()
-                    .fill(LinearGradient(colors: [Palette.bodyTop, Palette.bodyBottom],
-                                         startPoint: .top, endPoint: .bottom))
-                    .overlay(BlobShape().stroke(Palette.outline.opacity(0.6), lineWidth: 2))
-                    .frame(width: 106, height: 92)
-                    .overlay(highlight, alignment: .topLeading)
+                if state.action == .walk, !state.customWalkFrames.isEmpty {
+                    AnimatedAppearanceImage(frames: state.customWalkFrames)
+                } else if let customAppearance = customAppearance {
+                    CustomAppearanceImage(image: customAppearance)
+                } else {
+                    BlobShape()
+                        .fill(LinearGradient(colors: [Palette.bodyTop, Palette.bodyBottom],
+                                             startPoint: .top, endPoint: .bottom))
+                        .overlay(BlobShape().stroke(Palette.outline.opacity(0.6), lineWidth: 2))
+                        .frame(width: 106, height: 92)
+                        .overlay(highlight, alignment: .topLeading)
 
-                face
+                    face
+                }
             }
             .scaleEffect(x: state.facing == .left ? -1 : 1, y: 1)   // mirror to face
             .scaleEffect(
@@ -112,8 +126,28 @@ struct PetView: View {
             )
             .offset(y: (walkBob ? -4 : 0) + hopOffset)
         }
-        .frame(width: 112, height: 100)
-        .padding(.bottom, 8)
+        .frame(width: 180, height: 160)
+        .padding(.bottom, 4)
+    }
+
+    private var customAppearance: NSImage? {
+        state.customAppearances[appearanceRole]
+            ?? state.customAppearances[.companion]
+    }
+
+    private var appearanceRole: AppearanceRole {
+        switch state.action {
+        case .work, .think:
+            return .work
+        case .sleep:
+            return .rest
+        case .relax:
+            return .slack
+        case .drag:
+            return .drag
+        case .idle, .walk, .poke:
+            return .companion
+        }
     }
 
     /// Glossy highlight on the upper-left of the blob.
@@ -176,6 +210,82 @@ struct PetView: View {
                 .stroke(Palette.ink, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .frame(width: 16, height: 8)
         }
+    }
+}
+
+struct CustomAppearanceImage: View {
+    let image: NSImage
+
+    var body: some View {
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 180, height: 160)
+            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
+    }
+}
+
+struct AnimatedAppearanceImage: View {
+    let frames: [NSImage]
+    private let frameDuration: TimeInterval = 0.16
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: frameDuration)) { timeline in
+            let index = frameIndex(at: timeline.date)
+            CustomAppearanceImage(image: frames[index])
+        }
+    }
+
+    private func frameIndex(at date: Date) -> Int {
+        guard !frames.isEmpty else { return 0 }
+        let ticks = Int(date.timeIntervalSinceReferenceDate / frameDuration)
+        return abs(ticks) % frames.count
+    }
+}
+
+struct AgentStatusBubble: View {
+    let bubble: AgentBubble
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Text(dot)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(dotColor)
+            Text(bubble.title)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+            Text(bubble.detail)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .layoutPriority(-1)
+            Spacer(minLength: 0)
+            if bubble.requiresApproval {
+                Text("允许")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color(red: 0.18, green: 0.47, blue: 0.33)))
+            }
+        }
+        .foregroundStyle(Palette.ink)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .frame(width: 252, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(.white)
+                .shadow(color: .black.opacity(0.18), radius: 5, y: 1)
+        )
+        .opacity(bubble.finished ? 0.6 : 1.0)   // finished sessions: dimmed but still clickable
+    }
+
+    private var dot: String { "●" }
+
+    private var dotColor: Color {
+        bubble.source == "claude"
+            ? Color(red: 0.85, green: 0.47, blue: 0.34)   // Claude orange (#D97757)
+            : Color(red: 0.23, green: 0.51, blue: 0.96)   // Codex blue (#3B82F6)
     }
 }
 

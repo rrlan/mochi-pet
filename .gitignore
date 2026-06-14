@@ -14,7 +14,13 @@ DerivedData/
 # Local agent state (per vault multi-agent convention)
 .claude/PLAN.md
 .claude/plans/
+handoff.md
 
 # Editor
 .vscode/
 .idea/
+
+# Stray web bundles accidentally dropped into the project root (not ours)
+MainWindowPage-*.js
+main-*.js
+/index.js
