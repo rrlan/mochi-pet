@@ -187,7 +187,9 @@ final class BubbleTooltipWindow: NSPanel {
         label.font = .systemFont(ofSize: 12)
         label.textColor = .white
         label.maximumNumberOfLines = 4
-        label.lineBreakMode = .byWordWrapping
+        label.lineBreakMode = .byCharWrapping   // wrap CJK (no spaces to break on)
+        label.cell?.wraps = true
+        label.cell?.isScrollable = false
         card.addSubview(label)
         contentView = card
     }
@@ -198,12 +200,15 @@ final class BubbleTooltipWindow: NSPanel {
     /// top-aligned; flips to the other side / clamps to stay on-screen.
     func show(_ text: String, anchor rect: NSRect) {
         label.stringValue = text
-        label.preferredMaxLayoutWidth = 280
-        label.sizeToFit()
+        let maxTextW: CGFloat = 360
+        let textSize = label.cell?.cellSize(forBounds:
+            NSRect(x: 0, y: 0, width: maxTextW, height: 10_000)) ?? NSSize(width: 120, height: 18)
+        let lw = ceil(min(textSize.width, maxTextW))
+        let lh = ceil(textSize.height)
         let pad: CGFloat = 9
-        let w = label.frame.width + pad * 2
-        let h = label.frame.height + pad * 2
-        label.setFrameOrigin(NSPoint(x: pad, y: pad))
+        let w = lw + pad * 2
+        let h = lh + pad * 2
+        label.frame = NSRect(x: pad, y: pad, width: lw, height: lh)
         contentView?.frame = NSRect(x: 0, y: 0, width: w, height: h)
 
         var x = rect.maxX + 8          // to the right of the bubble
