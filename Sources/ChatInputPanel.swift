@@ -2,18 +2,25 @@
 //  ChatInputPanel.swift
 //  Mochi
 //
-//  A small floating text field that lets you talk to Mochi. Unlike the pet
-//  window (which never activates), this panel must become key to receive
-//  keyboard input, so we briefly activate the app while it's open.
+//  A small floating text field for talking to Mochi, with a button to pick which
+//  engine (Claude / Codex) answers *this* message. Unlike the pet window (which
+//  never activates), this panel must become key to receive keyboard input, so we
+//  briefly activate the app while it's open.
 //
 
 import AppKit
 
 final class ChatInputPanel: NSPanel {
     private let field = NSTextField()
-    var onSubmit: ((String) -> Void)?
+    private let engineButton = NSButton()
 
-    static let panelSize = NSSize(width: 260, height: 46)
+    /// Which engine answers — pre-set when presenting, toggled by the button.
+    var engine: AIEngine = .claude {
+        didSet { engineButton.title = engine.displayName }
+    }
+    var onSubmit: ((_ text: String, _ engine: AIEngine) -> Void)?
+
+    static let panelSize = NSSize(width: 304, height: 46)
 
     init() {
         super.init(contentRect: NSRect(origin: .zero, size: ChatInputPanel.panelSize),
@@ -32,7 +39,18 @@ final class ChatInputPanel: NSPanel {
         container.layer?.backgroundColor = NSColor.white.cgColor
         container.layer?.cornerRadius = 13
 
-        field.frame = NSRect(x: 14, y: 12, width: ChatInputPanel.panelSize.width - 28, height: 22)
+        // Engine toggle button (left).
+        engineButton.frame = NSRect(x: 8, y: 8, width: 74, height: 30)
+        engineButton.bezelStyle = .rounded
+        engineButton.title = engine.displayName
+        engineButton.font = .systemFont(ofSize: 12)
+        engineButton.toolTip = "点一下切换 Claude / Codex"
+        engineButton.target = self
+        engineButton.action = #selector(toggleEngine)
+        container.addSubview(engineButton)
+
+        // Text field (fills the rest).
+        field.frame = NSRect(x: 90, y: 12, width: ChatInputPanel.panelSize.width - 90 - 14, height: 22)
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
@@ -52,6 +70,7 @@ final class ChatInputPanel: NSPanel {
 
     /// Show the panel just above the given pet window frame and focus the field.
     func present(above petFrame: NSRect) {
+        engineButton.title = engine.displayName
         let origin = NSPoint(x: petFrame.midX - frame.width / 2,
                              y: petFrame.maxY - 24)
         setFrameOrigin(origin)
@@ -61,10 +80,15 @@ final class ChatInputPanel: NSPanel {
         makeFirstResponder(field)
     }
 
+    @objc private func toggleEngine() {
+        engine = (engine == .claude) ? .codex : .claude
+        makeFirstResponder(field)   // keep typing focus on the field
+    }
+
     @objc private func submit() {
         let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         orderOut(nil)
-        if !text.isEmpty { onSubmit?(text) }
+        if !text.isEmpty { onSubmit?(text, engine) }
     }
 }
 

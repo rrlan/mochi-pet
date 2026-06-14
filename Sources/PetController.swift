@@ -215,6 +215,11 @@ final class PetController {
 
     func poke() {
         stopWalk()
+        // While an agent is working, a click jumps to that agent's app/window.
+        if isBusy, let source = lastActiveSource {
+            openAgentApp(source)
+            return
+        }
         if isSleeping {
             // Poking a sleeping pet wakes it up gently.
             toggleSleep()
@@ -268,6 +273,8 @@ final class PetController {
     /// The latest "what is it doing" line per source (e.g. "运行 npm test").
     private var agentDetail: [String: String] = [:]
     private var workStartedAt: Date?
+    /// Most recently active source — clicking the busy pet jumps to its app.
+    private var lastActiveSource: String?
 
     /// Dispatch an event from the AgentMonitor, the `mochi` CLI, or hooks.
     /// `detail` is the current activity line (from the monitor), if any.
@@ -296,10 +303,26 @@ final class PetController {
         stopWalk()
         if activeAgents.isEmpty { workStartedAt = Date() }
         activeAgents.insert(source)
+        lastActiveSource = source
         if let detail = detail, !detail.isEmpty { agentDetail[source] = detail }
         isBusy = true
         state.action = .work
         state.speech = composeWorkBubble()
+    }
+
+    /// Bring the given agent's desktop app to the front.
+    private func openAgentApp(_ source: String) {
+        let path: String?
+        switch source {
+        case "codex":  path = "/Applications/Codex.app"
+        case "claude": path = "/Applications/Claude.app"
+        default:       path = nil
+        }
+        guard let path = path, FileManager.default.fileExists(atPath: path) else {
+            say("找不到 \(source) 的窗口 🤷", duration: 2)
+            return
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
     private func finishWork(source: String) {

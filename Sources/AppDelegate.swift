@@ -33,7 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Talking to Mochi.
         chatPanel = ChatInputPanel()
-        chatPanel.onSubmit = { [weak self] text in self?.controller.ask(text) }
+        chatPanel.onSubmit = { [weak self] text, engine in
+            guard let self = self else { return }
+            self.controller.engine = engine
+            UserDefaults.standard.set(engine.rawValue, forKey: self.engineDefaultsKey)
+            self.controller.ask(text)
+        }
         controller.onRequestChat = { [weak self] in self?.openChat() }
 
         // Listen for events from the `mochi` CLI / Claude Code / Codex hooks.
@@ -57,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openChat() {
+        chatPanel.engine = controller.engine
         chatPanel.present(above: window.frame)
     }
 
