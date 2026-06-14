@@ -11,6 +11,10 @@ build/
 *.swiftpm
 DerivedData/
 
+# Local agent state (per vault multi-agent convention)
+.claude/PLAN.md
+.claude/plans/
+
 # Editor
 .vscode/
 .idea/
