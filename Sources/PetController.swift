@@ -8,6 +8,7 @@
 //
 
 import AppKit
+import ApplicationServices
 
 final class PetController {
     private struct WorkSession {
@@ -488,6 +489,16 @@ final class PetController {
             return
         }
         openAgentSession(source: source, sessionID: sessionID)
+        // Synthesizing the confirm keystroke needs Accessibility permission;
+        // without it the keystroke is silently dropped. Tell the user and jump
+        // straight to the right settings pane instead of failing quietly.
+        guard AXIsProcessTrusted() else {
+            say("替你点「允许」需要 Mochi 的「辅助功能」权限，去设置里打开它", duration: 5)
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { [weak self] in
             self?.sendApprovalKeystroke(to: app)
         }
