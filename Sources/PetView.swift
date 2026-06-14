@@ -255,7 +255,7 @@ struct AgentStatusBubble: View {
                 .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: 84, alignment: .leading)
+                .frame(maxWidth: 100, alignment: .leading)
                 .layoutPriority(1)                          // title keeps its slot…
             Text(bubble.detail)
                 .font(.system(size: 11, weight: .medium))

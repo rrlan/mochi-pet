@@ -49,6 +49,10 @@ final class AgentMonitor {
     private var sessionIDCache: [String: String] = [:]
     /// Cache of a session's task name (project folder) by file path.
     private var taskNameCache: [String: String] = [:]
+    private var projectCache: [String: String] = [:]
+    /// Claude desktop session titles by uuid (refreshed from its log), and when.
+    private var sessionTitles: [String: (title: String, userRenamed: Bool)] = [:]
+    private var sessionTitlesCheckedAt: TimeInterval = 0
 
     init(onChange: @escaping (_ source: String, _ sessionID: String, _ active: Bool, _ detail: String?, _ task: String?) -> Void) {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -176,6 +180,12 @@ final class AgentMonitor {
     /// folder: the session's first *real* user prompt (e.g. "整体review代码"),
     /// falling back to the project folder name. Cached once a prompt is found.
     private func taskName(label: String, url: URL) -> String? {
+        // A user-renamed Claude-desktop title wins, shown as "<project> - <title>".
+        // Re-checked every tick since the user can rename at any time.
+        if let renamed = renamedTitle(label: label, url: url) {
+            if let project = projectName(label: label, url: url) { return "\(project) - \(renamed)" }
+            return renamed
+        }
         if let cached = taskNameCache[url.path] { return cached }
         if let prompt = firstPrompt(label: label, url: url) {
             taskNameCache[url.path] = prompt
@@ -184,8 +194,9 @@ final class AgentMonitor {
         return projectName(label: label, url: url)   // not cached → keep trying for the prompt
     }
 
-    /// The working-directory's folder name (e.g. "desk-pet").
+    /// The working-directory's folder name (e.g. "desk-pet"). Cached.
     private func projectName(label: String, url: URL) -> String? {
+        if let cached = projectCache[url.path] { return cached }
         let cwd: String?
         if label == "codex" {
             cwd = firstLine(of: url).flatMap { obj($0) }
@@ -195,7 +206,51 @@ final class AgentMonitor {
         }
         guard let cwd = cwd, !cwd.isEmpty else { return nil }
         let name = (cwd as NSString).lastPathComponent
-        return name.isEmpty ? nil : name
+        guard !name.isEmpty else { return nil }
+        projectCache[url.path] = name
+        return name
+    }
+
+    /// A user-renamed Claude-desktop session title (`titleSource:user`). The
+    /// title isn't in the transcript, so we read it from the desktop app's log.
+    /// nil for Codex or sessions the user hasn't renamed.
+    private func renamedTitle(label: String, url: URL) -> String? {
+        guard label == "claude" else { return nil }
+        refreshClaudeTitlesIfStale()
+        let uuid = url.deletingPathExtension().lastPathComponent
+        if let entry = sessionTitles[uuid], entry.userRenamed { return entry.title }
+        return nil
+    }
+
+    private func refreshClaudeTitlesIfStale() {
+        let now = Date().timeIntervalSince1970
+        guard now - sessionTitlesCheckedAt > 15 else { return }
+        sessionTitlesCheckedAt = now
+        let log = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Claude/main.log")
+        guard let h = try? FileHandle(forReadingFrom: log) else { return }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        let cap: UInt64 = 800_000
+        try? h.seek(toOffset: size > cap ? size - cap : 0)
+        let data = (try? h.readToEnd()) ?? Data()
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n")
+        where line.contains("Updated session local_") && line.contains("titleSource:") {
+            parseTitleLine(String(line))
+        }
+    }
+
+    // Parses: `Updated session local_<uuid>: { title: '<title>', titleSource: '<source>' }`
+    private func parseTitleLine(_ line: String) {
+        guard let idStart = line.range(of: "local_"),
+              let titleStart = line.range(of: "title: '"),
+              let titleEnd = line.range(of: "', titleSource: '", range: titleStart.upperBound..<line.endIndex),
+              let srcEnd = line.range(of: "'", range: titleEnd.upperBound..<line.endIndex) else { return }
+        let uuid = String(line[idStart.upperBound...].prefix(36))
+        let title = String(line[titleStart.upperBound..<titleEnd.lowerBound])
+        let source = String(line[titleEnd.upperBound..<srcEnd.lowerBound])
+        guard !uuid.isEmpty, !title.isEmpty else { return }
+        sessionTitles[uuid] = (title, source == "user")
     }
 
     /// The first user message that's an actual prompt — skipping injected
