@@ -204,7 +204,8 @@ final class AgentMonitor {
         for line in headLines(of: url) {
             guard let o = obj(line), let raw = userMessageText(o, label: label),
                   let cleaned = cleanedPrompt(raw) else { continue }
-            return snippet(cleaned, 16)
+            // Longish: the bubble truncates it to fit, the hover tooltip shows it all.
+            return snippet(cleaned, 100)
         }
         return nil
     }

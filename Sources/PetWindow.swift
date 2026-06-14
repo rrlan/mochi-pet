@@ -139,8 +139,10 @@ final class PetContainerView: NSView {
         let idx = hoveredBubbleIndex(at: convert(event.locationInWindow, from: nil))
         guard idx != hoveredBubble else { return }
         hoveredBubble = idx
-        if idx >= 0, idx < bubbleTooltips.count {
-            tooltipWindow.show(bubbleTooltips[idx], at: NSEvent.mouseLocation)
+        if idx >= 0, idx < bubbleTooltips.count, let window = window {
+            let count = min(bubbleTargets.count, 4)
+            let anchor = window.convertToScreen(bubbleRect(index: idx, count: count))
+            tooltipWindow.show(bubbleTooltips[idx], anchor: anchor)
         } else {
             tooltipWindow.hide()
         }
@@ -192,19 +194,25 @@ final class BubbleTooltipWindow: NSPanel {
 
     override var canBecomeKey: Bool { false }
 
-    func show(_ text: String, at cursor: NSPoint) {
+    /// Anchored beside the bubble (so it lands in the same spot every time),
+    /// top-aligned; flips to the other side / clamps to stay on-screen.
+    func show(_ text: String, anchor rect: NSRect) {
         label.stringValue = text
-        label.preferredMaxLayoutWidth = 260
+        label.preferredMaxLayoutWidth = 280
         label.sizeToFit()
         let pad: CGFloat = 9
         let w = label.frame.width + pad * 2
         let h = label.frame.height + pad * 2
         label.setFrameOrigin(NSPoint(x: pad, y: pad))
         contentView?.frame = NSRect(x: 0, y: 0, width: w, height: h)
-        var x = cursor.x + 12
-        let y = cursor.y - h - 8
-        let screen = NSScreen.screens.first { $0.frame.contains(cursor) } ?? NSScreen.main
-        if let maxX = screen?.frame.maxX { x = min(x, maxX - w - 8) }
+
+        var x = rect.maxX + 8          // to the right of the bubble
+        var y = rect.maxY - h          // top-aligned with the bubble
+        if let f = (NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main)?.frame {
+            if x + w > f.maxX - 8 { x = rect.minX - w - 8 }   // flip left if it'd run off the right
+            x = min(max(x, f.minX + 8), f.maxX - w - 8)
+            y = min(max(y, f.minY + 8), f.maxY - h - 8)
+        }
         setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
         orderFront(nil)
     }
