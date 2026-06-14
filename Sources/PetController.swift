@@ -49,6 +49,11 @@ final class PetController {
 
     private(set) var isSleeping = false
 
+    /// Last time anything happened — an agent ran, or the user interacted. After
+    /// `restAfterIdle` of nothing, the pet naps (sleep state → `rest.png`).
+    private var lastActivityAt = Date()
+    private let restAfterIdle: TimeInterval = 900   // 15 minutes
+
     init(window: PetWindow, state: PetState) {
         self.window = window
         self.state = state
@@ -86,6 +91,11 @@ final class PetController {
     private func decide() {
         defer { scheduleBrain() }
         guard !isSleeping, !isBusy, !isFollowing, state.action == .idle else { return }
+        // No agent activity (or user interaction) for a while → nap (rest.png).
+        if Date().timeIntervalSince(lastActivityAt) > restAfterIdle {
+            napFromIdle()
+            return
+        }
         let r = Double.random(in: 0...1)
         if r < 0.38 {
             startWalk()
@@ -98,6 +108,22 @@ final class PetController {
         }
         // otherwise: just keep idling
     }
+
+    /// Drift off to sleep after a long idle stretch. Poking or any agent
+    /// activity wakes it again.
+    private func napFromIdle() {
+        isSleeping = true
+        stopWalk()
+        state.action = .sleep
+        state.speech = "Zzz..."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self, self.isSleeping else { return }
+            if self.state.speech == "Zzz..." { self.state.speech = nil }
+        }
+    }
+
+    /// Mark "something happened" so the idle-nap timer resets.
+    private func markActivity() { lastActivityAt = Date() }
 
     /// A little jump in place.
     func hop() {
@@ -134,6 +160,7 @@ final class PetController {
         isFollowing = on
         stopWalk()
         if on {
+            markActivity()
             wakeIfNeeded()
             say("追你啦~ 🏃", duration: 1.8)
             followTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
@@ -246,6 +273,7 @@ final class PetController {
 
     func poke() {
         stopWalk()
+        markActivity()
         // While agents are working, the status bubbles are the jump-to-session
         // affordance — a body click must NOT jump or steal focus here. It also
         // fires on the first click of a double-click, and stealing focus would
@@ -273,6 +301,7 @@ final class PetController {
 
     private func beginDrag() {
         stopWalk()
+        markActivity()
         state.action = .drag
         state.speech = nil
         setSpeechActionable(false)
@@ -316,6 +345,7 @@ final class PetController {
     /// Dispatch an event from the AgentMonitor, the `mochi` CLI, or hooks.
     /// `detail` is the current activity line (from the monitor), if any.
     func handleBridgeEvent(type: String, text: String, detail: String? = nil, sessionID: String? = nil, task: String? = nil) {
+        markActivity()   // any agent signal keeps the pet awake
         switch type {
         case "busy":
             enterWork(source: text.isEmpty ? "agent" : text, detail: detail, sessionID: sessionID, task: task)
