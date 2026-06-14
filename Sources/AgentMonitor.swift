@@ -204,9 +204,9 @@ final class AgentMonitor {
         for line in headLines(of: url) {
             guard let o = obj(line), let raw = userMessageText(o, label: label),
                   let cleaned = cleanedPrompt(raw) else { continue }
-            // The bubble truncates it to fit; the hover tooltip wraps it to a
-            // couple of lines.
-            return snippet(cleaned, 70)
+            // The bubble truncates it to fit; the hover tooltip shows the whole
+            // ~28-char snippet — enough to tell sessions apart.
+            return snippet(cleaned, 28)
         }
         return nil
     }
