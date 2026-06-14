@@ -172,38 +172,85 @@ final class AgentMonitor {
         return nil
     }
 
-    /// A short, human-friendly name for a session: its working-directory's
-    /// folder name (e.g. "desk-pet"). Cached — the cwd never changes per file.
+    /// A short title for a session to tell apart sibling sessions in the same
+    /// folder: the session's first *real* user prompt (e.g. "整体review代码"),
+    /// falling back to the project folder name. Cached once a prompt is found.
     private func taskName(label: String, url: URL) -> String? {
         if let cached = taskNameCache[url.path] { return cached }
-        let cwd: String?
-        if label == "codex" {
-            cwd = firstLine(of: url)
-                .flatMap { obj($0) }
-                .flatMap { ($0["payload"] as? [String: Any])?["cwd"] as? String }
-        } else {
-            cwd = claudeCwd(in: url)
+        if let prompt = firstPrompt(label: label, url: url) {
+            taskNameCache[url.path] = prompt
+            return prompt
         }
-        guard let cwd = cwd, !cwd.isEmpty else { return nil }   // meta not ready → retry next tick
-        let name = (cwd as NSString).lastPathComponent
-        guard !name.isEmpty else { return nil }
-        taskNameCache[url.path] = name
-        return name
+        return projectName(label: label, url: url)   // not cached → keep trying for the prompt
     }
 
-    /// Claude's first line (a `queue-operation`) has no `cwd`; it appears on the
-    /// first real message. Lines are small, so a single head read covers them.
-    private func claudeCwd(in url: URL) -> String? {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? h.close() }
-        let data = (try? h.read(upToCount: 65_536)) ?? Data()
-        guard let s = String(data: data, encoding: .utf8) else { return nil }
-        for line in s.split(separator: "\n", omittingEmptySubsequences: true).prefix(40) {
-            if let o = obj(String(line)), let cwd = o["cwd"] as? String, !cwd.isEmpty {
-                return cwd
-            }
+    /// The working-directory's folder name (e.g. "desk-pet").
+    private func projectName(label: String, url: URL) -> String? {
+        let cwd: String?
+        if label == "codex" {
+            cwd = firstLine(of: url).flatMap { obj($0) }
+                .flatMap { ($0["payload"] as? [String: Any])?["cwd"] as? String }
+        } else {
+            cwd = headLines(of: url).lazy.compactMap { self.obj($0)?["cwd"] as? String }.first
+        }
+        guard let cwd = cwd, !cwd.isEmpty else { return nil }
+        let name = (cwd as NSString).lastPathComponent
+        return name.isEmpty ? nil : name
+    }
+
+    /// The first user message that's an actual prompt — skipping injected
+    /// context (system reminders, the Codex AGENTS.md/<INSTRUCTIONS> block).
+    private func firstPrompt(label: String, url: URL) -> String? {
+        for line in headLines(of: url) {
+            guard let o = obj(line), let raw = userMessageText(o, label: label),
+                  let cleaned = cleanedPrompt(raw) else { continue }
+            return snippet(cleaned, 16)
         }
         return nil
+    }
+
+    private func userMessageText(_ o: [String: Any], label: String) -> String? {
+        if label == "claude" {
+            guard o["type"] as? String == "user",
+                  let msg = o["message"] as? [String: Any] else { return nil }
+            if let s = msg["content"] as? String { return s }
+            if let arr = msg["content"] as? [[String: Any]] {
+                for b in arr where b["type"] as? String == "text" {
+                    if let t = b["text"] as? String { return t }
+                }
+            }
+            return nil
+        }
+        let p = o["payload"] as? [String: Any] ?? o
+        guard p["role"] as? String == "user" else { return nil }
+        if let s = p["content"] as? String { return s }
+        if let arr = p["content"] as? [[String: Any]] {
+            for b in arr { if let t = b["text"] as? String { return t } }
+        }
+        return nil
+    }
+
+    private func cleanedPrompt(_ text: String) -> String? {
+        var t = text
+        if let r = t.range(of: "</system-reminder>", options: .backwards) {
+            t = String(t[r.upperBound...])               // reminders are prepended; keep what follows
+        }
+        if t.contains("<INSTRUCTIONS>") || t.contains("AGENTS.md instructions for") { return nil }
+        let collapsed = t.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        return collapsed.count >= 2 ? collapsed : nil
+    }
+
+    /// Read the head of a transcript as complete lines. Generous byte cap so the
+    /// Codex meta line + injected instructions don't crowd out the real prompt.
+    private func headLines(of url: URL, byteCap: Int = 400_000, maxLines: Int = 50) -> [String] {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return [] }
+        defer { try? h.close() }
+        let data = (try? h.read(upToCount: byteCap)) ?? Data()
+        return String(decoding: data, as: UTF8.self)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .prefix(maxLines)
+            .map(String.init)
     }
 
     // MARK: - Activity parsing

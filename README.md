@@ -133,7 +133,7 @@ Mochi **自动监听** agent 写的会话 transcript 文件，无需任何配置
 
 文件在增长 = 该 agent 正在这一轮；安静下来 = 这一轮结束。这是**唯一**能覆盖所有形态的方式 —— CLI、ACP、以及**桌面版（Claude Code desktop、Codex App）**，后者不触发 shell hooks。
 
-气泡按会话显示，写着**项目名** + 颜色圆点（🟠 Claude，🔵 Codex）+ 正在干什么，例如 `desk-pet · 运行 swift build`。**点气泡跳回那条会话**（`claude://resume` / `codex://threads`）；跑完后气泡保留几分钟、仍可点。Claude 和 Codex 分开计数，两个一起跑时各显示一个气泡，直到都结束。
+气泡按会话显示，写着**任务首句**（该会话的第一条提示词，便于区分同目录跑的多个会话；取不到时退回项目名）+ 颜色圆点（🟠 Claude，🔵 Codex）+ 正在干什么，例如 `整体review代码 · 运行 swift build`。**点气泡跳回那条会话**（`claude://resume` / `codex://threads`）；跑完后气泡保留几分钟、仍可点。Claude 和 Codex 分开计数，两个一起跑时各显示一个气泡，直到都结束。
 
 菜单开关：**感知 AI 工作**。注意：Claude Code 的*沙箱* Cowork 模式可能把 transcript 写在沙箱内、`~/.claude/projects` 之外，那种情况从外部检测不到。
 
