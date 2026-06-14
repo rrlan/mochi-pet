@@ -308,7 +308,7 @@ final class AgentMonitor {
                                           c["input"] as? [String: Any] ?? [:])
             }
             for c in content where c["type"] as? String == "text" {
-                if let t = c["text"] as? String, !t.isEmpty { return "💬 " + snippet(t) }
+                if let t = c["text"] as? String, !t.isEmpty { return messageSnippet(t) }
             }
         }
         return nil
@@ -347,10 +347,10 @@ final class AgentMonitor {
                 return name + (cmd.isEmpty ? "" : " " + snippet(cmd))
             case "message":
                 if let content = payload["content"] as? [[String: Any]] {
-                    for c in content { if let t = c["text"] as? String, !t.isEmpty { return "💬 " + snippet(t) } }
+                    for c in content { if let t = c["text"] as? String, !t.isEmpty { return messageSnippet(t) } }
                 }
             case "agent_message":
-                if let m = payload["message"] as? String, !m.isEmpty { return "💬 " + snippet(m) }
+                if let m = payload["message"] as? String, !m.isEmpty { return messageSnippet(m) }
             case "reasoning":
                 return "🤔 思考中…"
             default:
@@ -446,5 +446,13 @@ final class AgentMonitor {
         let oneLine = text.replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
         return oneLine.count <= limit ? oneLine : String(oneLine.prefix(limit)) + "…"
+    }
+
+    /// A 💬 chat-message line with light markdown stripped (so `**x**` etc. don't
+    /// show raw in the bubble).
+    private func messageSnippet(_ text: String) -> String {
+        var t = text
+        for token in ["**", "__", "*", "`", "#"] { t = t.replacingOccurrences(of: token, with: "") }
+        return "💬 " + snippet(t)
     }
 }

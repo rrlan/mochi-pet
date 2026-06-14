@@ -255,12 +255,12 @@ struct AgentStatusBubble: View {
                 .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: 84, alignment: .leading)   // keep the title short…
+                .frame(maxWidth: 84, alignment: .leading)
+                .layoutPriority(1)                          // title keeps its slot…
             Text(bubble.detail)
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)                          // …so the activity gets the room
+                .truncationMode(.tail)                      // …activity takes whatever's left
             Spacer(minLength: 0)
             if bubble.requiresApproval {
                 Text("允许")
