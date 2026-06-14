@@ -28,6 +28,11 @@ final class PetContainerView: NSView {
     var onDragEnd: (() -> Void)?
     var isBubbleInteractive = false
     var bubbleTargets: [BubbleTarget] = []
+    /// Full "title · activity" per bubble (same order as `bubbleTargets`), shown
+    /// on hover so a truncated title is still readable.
+    var bubbleTooltips: [String] = []
+    private var hoveredBubble = -1
+    private lazy var tooltipWindow = BubbleTooltipWindow()
 
     /// Offset between the cursor and the window origin at mouse-down time, so
     /// dragging keeps the grab point under the cursor.
@@ -118,6 +123,93 @@ final class PetContainerView: NSView {
         didDrag = false
         mouseDownBubbleTarget = nil
     }
+
+    // MARK: - Hover tooltip
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self, userInfo: nil))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let idx = hoveredBubbleIndex(at: convert(event.locationInWindow, from: nil))
+        guard idx != hoveredBubble else { return }
+        hoveredBubble = idx
+        if idx >= 0, idx < bubbleTooltips.count {
+            tooltipWindow.show(bubbleTooltips[idx], at: NSEvent.mouseLocation)
+        } else {
+            tooltipWindow.hide()
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoveredBubble = -1
+        tooltipWindow.hide()
+    }
+
+    private func hoveredBubbleIndex(at point: NSPoint) -> Int {
+        guard isBubbleInteractive else { return -1 }
+        let count = min(bubbleTargets.count, 4)
+        for i in 0..<count where bubbleRect(index: i, count: count).contains(point) {
+            return i
+        }
+        return -1
+    }
+}
+
+/// A tiny dark floating label shown when the cursor hovers a status bubble, so
+/// a truncated title's full text is readable.
+final class BubbleTooltipWindow: NSPanel {
+    private let label = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
+                   styleMask: [.borderless, .nonactivatingPanel],
+                   backing: .buffered, defer: false)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .floating
+        isFloatingPanel = true
+        ignoresMouseEvents = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+
+        let card = NSView()
+        card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor(white: 0.13, alpha: 0.96).cgColor
+        card.layer?.cornerRadius = 8
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .white
+        label.maximumNumberOfLines = 4
+        label.lineBreakMode = .byWordWrapping
+        card.addSubview(label)
+        contentView = card
+    }
+
+    override var canBecomeKey: Bool { false }
+
+    func show(_ text: String, at cursor: NSPoint) {
+        label.stringValue = text
+        label.preferredMaxLayoutWidth = 260
+        label.sizeToFit()
+        let pad: CGFloat = 9
+        let w = label.frame.width + pad * 2
+        let h = label.frame.height + pad * 2
+        label.setFrameOrigin(NSPoint(x: pad, y: pad))
+        contentView?.frame = NSRect(x: 0, y: 0, width: w, height: h)
+        var x = cursor.x + 12
+        let y = cursor.y - h - 8
+        let screen = NSScreen.screens.first { $0.frame.contains(cursor) } ?? NSScreen.main
+        if let maxX = screen?.frame.maxX { x = min(x, maxX - w - 8) }
+        setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
+        orderFront(nil)
+    }
+
+    func hide() { orderOut(nil) }
 }
 
 /// Borderless, transparent, always-on-top panel that floats the pet above
