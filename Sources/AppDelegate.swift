@@ -49,20 +49,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chatPanel.present(above: window.frame)
     }
 
+    /// Last saved origin, but only if it's visible on a currently-connected
+    /// screen (so unplugging a display doesn't strand the pet off-screen).
+    private func restoredOrigin() -> NSPoint? {
+        let d = UserDefaults.standard
+        guard d.object(forKey: "MochiPosX") != nil, d.object(forKey: "MochiPosY") != nil else {
+            return nil
+        }
+        let p = NSPoint(x: d.double(forKey: "MochiPosX"), y: d.double(forKey: "MochiPosY"))
+        let anchor = NSPoint(x: p.x + PetWindow.canvasSize.width / 2, y: p.y + 40)
+        let onScreen = NSScreen.screens.contains { $0.frame.contains(anchor) }
+        return onScreen ? p : nil
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        controller.savePosition()
+    }
+
     // MARK: - Window
 
     private func setupWindow() {
         window = PetWindow()
 
-        // Start centered horizontally, sitting near the bottom of whichever
-        // screen the cursor is currently on (falls back to the main screen).
-        let mouse = NSEvent.mouseLocation
-        let activeScreen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
-            ?? NSScreen.main
-        let screen = activeScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let origin = NSPoint(x: screen.midX - PetWindow.canvasSize.width / 2,
-                             y: screen.minY + 80)
-        window.setFrameOrigin(origin)
+        // Restore the last position if it's still on-screen; otherwise start
+        // centered near the bottom of whichever screen the cursor is on.
+        if let restored = restoredOrigin() {
+            window.setFrameOrigin(restored)
+        } else {
+            let mouse = NSEvent.mouseLocation
+            let activeScreen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+                ?? NSScreen.main
+            let screen = activeScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            window.setFrameOrigin(NSPoint(x: screen.midX - PetWindow.canvasSize.width / 2,
+                                          y: screen.minY + 80))
+        }
 
         let host = NSHostingView(rootView: PetView(state: state))
         host.frame = window.container.bounds
@@ -82,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "跟 Mochi 说话…", action: #selector(chatAction), keyEquivalent: "")
         menu.addItem(withTitle: "忘掉刚才的对话", action: #selector(clearHistoryAction), keyEquivalent: "")
         menu.addItem(withTitle: "戳一下 Mochi", action: #selector(pokeAction), keyEquivalent: "")
+        menu.addItem(withTitle: "跟随鼠标", action: #selector(toggleFollowAction(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "睡觉 / 起床", action: #selector(sleepAction), keyEquivalent: "")
         menu.addItem(withTitle: "隐藏 / 显示", action: #selector(toggleVisibleAction), keyEquivalent: "")
 
@@ -112,6 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearHistoryAction() {
         controller.clearHistory()
+    }
+
+    @objc private func toggleFollowAction(_ sender: NSMenuItem) {
+        let on = !controller.isFollowing
+        controller.setFollowing(on)
+        sender.state = on ? .on : .off
     }
 
     @objc private func selectEngineAction(_ sender: NSMenuItem) {

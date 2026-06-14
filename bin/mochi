@@ -3,11 +3,14 @@
 # mochi — talk to your running Mochi desktop pet from the shell, scripts, or
 # Claude Code / Codex hooks.
 #
-#   mochi busy            # Mochi enters "working" mode
-#   mochi done [message]  # Mochi celebrates + posts a notification
-#   mochi say  <text>     # Mochi says something
+#   mochi busy  [source]  # Mochi enters "working" mode (source e.g. claude/codex)
+#   mochi done  [source]  # that source finished → notify; celebrate when all done
+#   mochi say   <text>    # Mochi says something
 #   mochi alert <text>    # Mochi warns + posts a notification
 #   mochi <free text>     # shorthand for: mochi say <free text>
+#
+# busy/done take a single SOURCE label and ignore any extra arguments, so
+# Codex's `notify` (which appends a JSON payload) still parses cleanly.
 #
 set -euo pipefail
 
@@ -17,11 +20,13 @@ LOG="$DIR/inbox.log"
 
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift || true
-rest="$*"
 
 case "$cmd" in
-  busy|done|say|alert)
-    printf '%s %s\n' "$cmd" "$rest" >> "$LOG"
+  busy|done)
+    printf '%s %s\n' "$cmd" "${1:-}" >> "$LOG"   # only the first arg = source
+    ;;
+  say|alert)
+    printf '%s %s\n' "$cmd" "$*" >> "$LOG"
     ;;
   "" )
     echo "usage: mochi {busy|done|say|alert} [text]" >&2
@@ -29,6 +34,6 @@ case "$cmd" in
     ;;
   * )
     # Bare text → treat as `say`.
-    printf 'say %s\n' "$cmd $rest" >> "$LOG"
+    printf 'say %s\n' "$cmd $*" >> "$LOG"
     ;;
 esac

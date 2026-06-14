@@ -17,6 +17,11 @@ final class PetController {
     private var walkTimer: Timer?
     private var blinkTimer: Timer?
     private var thinkTimer: Timer?
+    private var followTimer: Timer?
+
+    private(set) var isFollowing = false
+    private let posKeyX = "MochiPosX"
+    private let posKeyY = "MochiPosY"
 
     /// Which AI CLI to talk to. Toggled from the menu, persisted by AppDelegate.
     var engine: AIEngine = .claude
@@ -60,13 +65,84 @@ final class PetController {
     }
 
     /// Pick the next idle behavior. Only acts when the pet is genuinely idle so
-    /// we never interrupt a drag, poke reaction, or nap.
+    /// we never interrupt a drag, poke reaction, nap, or follow.
     private func decide() {
         defer { scheduleBrain() }
-        guard !isSleeping, !isBusy, state.action == .idle else { return }
-        if Double.random(in: 0...1) < 0.55 {
+        guard !isSleeping, !isBusy, !isFollowing, state.action == .idle else { return }
+        let r = Double.random(in: 0...1)
+        if r < 0.45 {
             startWalk()
+        } else if r < 0.62 {
+            hop()
+        } else if r < 0.78 {
+            lookAround()
         }
+        // otherwise: just keep idling
+    }
+
+    /// A little jump in place.
+    func hop() {
+        guard state.action == .idle else { return }
+        state.hopTrigger += 1
+    }
+
+    /// Briefly glance the other way, then back.
+    private func lookAround() {
+        guard state.action == .idle else { return }
+        let original = state.facing
+        state.facing = (original == .right) ? .left : .right
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+            guard let self = self, self.state.action == .idle else { return }
+            self.state.facing = original
+        }
+    }
+
+    // MARK: - Follow the cursor
+
+    func setFollowing(_ on: Bool) {
+        isFollowing = on
+        stopWalk()
+        if on {
+            wakeIfNeeded()
+            say("追你啦~ 🏃", duration: 1.8)
+            followTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+                self?.followStep()
+            }
+        } else {
+            followTimer?.invalidate()
+            followTimer = nil
+            if state.action == .walk { state.action = .idle }
+            savePosition()
+        }
+    }
+
+    private func followStep() {
+        guard let window = window else { return }
+        let cursor = NSEvent.mouseLocation
+        let targetX = cursor.x - window.frame.width / 2
+        let targetY = cursor.y - window.frame.height + 36   // sit just below the cursor
+        var origin = window.frame.origin
+        let dx = targetX - origin.x
+        let dy = targetY - origin.y
+        let dist = (dx * dx + dy * dy).squareRoot()
+        if dist < 4 {
+            if state.action != .idle { state.action = .idle }
+            return
+        }
+        let stepLen = min(9, dist)
+        origin.x += dx / dist * stepLen
+        origin.y += dy / dist * stepLen
+        window.setFrameOrigin(origin)
+        state.facing = dx < 0 ? .left : .right
+        if state.action != .walk { state.action = .walk }
+    }
+
+    // MARK: - Position persistence
+
+    func savePosition() {
+        guard let frame = window?.frame else { return }
+        UserDefaults.standard.set(Double(frame.origin.x), forKey: posKeyX)
+        UserDefaults.standard.set(Double(frame.origin.y), forKey: posKeyY)
     }
 
     // MARK: - Blinking
@@ -126,11 +202,13 @@ final class PetController {
     }
 
     private func stopWalk() {
+        let wasWalking = walkTimer != nil
         walkTimer?.invalidate()
         walkTimer = nil
         if state.action == .walk {
             state.action = isSleeping ? .sleep : .idle
         }
+        if wasWalking { savePosition() }
     }
 
     // MARK: - User interaction
@@ -162,6 +240,7 @@ final class PetController {
 
     private func endDrag() {
         state.action = isSleeping ? .sleep : .idle
+        savePosition()
     }
 
     // MARK: - Sleep
@@ -183,14 +262,19 @@ final class PetController {
     // MARK: - External agent awareness (bridge events)
 
     private var workTimer: Timer?
+    private var workTick = 0
+    /// Coding agents currently working, by source label (e.g. "claude", "codex").
+    /// Mochi stays in "working" mode until this is empty — handling the case
+    /// where Claude Code and Codex run concurrently.
+    private var activeAgents: Set<String> = []
 
     /// Dispatch a one-line event from the `mochi` CLI / Claude Code / Codex hooks.
     func handleBridgeEvent(type: String, text: String) {
         switch type {
         case "busy":
-            beginWork()
+            enterWork(source: text.isEmpty ? "agent" : text)
         case "done":
-            endWork(text.isEmpty ? "搞定啦！✅" : text)
+            finishWork(source: text.isEmpty ? "agent" : text)
         case "say":
             guard !text.isEmpty else { return }
             wakeIfNeeded()
@@ -205,29 +289,46 @@ final class PetController {
         }
     }
 
-    private func beginWork() {
-        stopWalk()
+    private func enterWork(source: String) {
         wakeIfNeeded()
+        stopWalk()
+        activeAgents.insert(source)
         isBusy = true
         state.action = .work
-        let bubbles = ["码字中…", "🔨 干活中", "🤔 想想…", "👀 看代码", "⌨️ ……"]
-        var i = 0
-        state.speech = bubbles[0]
-        workTimer?.invalidate()
-        workTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: true) { [weak self] _ in
-            i = (i + 1) % bubbles.count
-            self?.state.speech = bubbles[i]
+        workTick = 0
+        state.speech = workBubble()
+        guard workTimer == nil else { return }
+        workTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.workTick += 1
+            self.state.speech = self.workBubble()
         }
     }
 
-    private func endWork(_ message: String) {
-        workTimer?.invalidate()
-        workTimer = nil
-        isBusy = false
-        state.action = .idle
-        state.pokeTrigger += 1          // little celebratory bounce
-        say(message, duration: 6)
-        notify(title: "Mochi 🍡", body: message)
+    private func finishWork(source: String) {
+        activeAgents.remove(source)
+        let label = (source == "agent") ? "" : "\(source) "
+        notify(title: "Mochi 🍡", body: "\(label)跑完啦 ✅")
+
+        if activeAgents.isEmpty {
+            workTimer?.invalidate()
+            workTimer = nil
+            isBusy = false
+            state.action = .idle
+            state.pokeTrigger += 1                  // little celebratory bounce
+            say("\(label)搞定！✅", duration: 6)
+        } else {
+            // Others still working — refresh the bubble to the new count.
+            state.speech = workBubble()
+        }
+    }
+
+    private func workBubble() -> String {
+        if activeAgents.count >= 2 {
+            return "\(activeAgents.count) 个小助手在忙 🔥"
+        }
+        let cute = ["码字中…", "🔨 干活中", "🤔 想想…", "👀 看代码", "⌨️ ……"]
+        return cute[workTick % cute.count]
     }
 
     private func wakeIfNeeded() {

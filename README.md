@@ -17,8 +17,8 @@ No image assets · No Xcode required · ~Native, a few MB of RAM
 ## Features
 
 - 🟢 **Lives on your desktop** — a borderless, transparent, always-on-top window that floats above your other apps without stealing focus.
-- 😴 **Has a life of its own** — breathes, blinks, strolls around the screen, and naps.
-- 🖱️ **Interactive** — drag Mochi anywhere; poke it and it reacts.
+- 😴 **Has a life of its own** — breathes, blinks, strolls around, hops, looks around, and naps.
+- 🖱️ **Interactive** — drag Mochi anywhere (it remembers where you left it); poke it and it reacts; or have it **follow your cursor**.
 - 🎨 **Drawn entirely in code** — the character is pure SwiftUI vector shapes, so the whole app is a few MB and trivially restyleable. No sprite sheets to ship.
 - 🧰 **Menu-bar controlled** — a 🍡 icon lets you poke it, put it to sleep, hide it, or quit.
 - 🤖 **Talks to Claude Code / Codex** — double-click Mochi, type a message, and it routes to the `claude` or `codex` CLI and shows the reply in its speech bubble (with a "thinking" animation while it waits). Switch engines from the menu.
@@ -51,9 +51,11 @@ To quit: use the menu-bar 🍡 → **退出 Mochi**, or `pkill -x Mochi`.
 
 | Action | How |
 | --- | --- |
-| Move Mochi | Click & drag it |
+| Move Mochi | Click & drag it (its position is remembered) |
 | Poke it | Click it once (or menu → 戳一下) |
 | **Chat with it** | **Double-click it** (or menu → 跟 Mochi 说话…), type, press Return |
+| Follow the cursor | Menu → 跟随鼠标 (toggle) |
+| Forget the chat | Menu → 忘掉刚才的对话 |
 | Pick AI engine | Menu → AI 引擎 → Claude / Codex |
 | Sleep / wake | Menu → 睡觉 / 起床 (or poke a sleeping Mochi) |
 | Hide / show | Menu → 隐藏 / 显示 |
@@ -76,20 +78,24 @@ ln -sf "$PWD/bin/mochi" /usr/local/bin/mochi   # or any dir on your PATH
 Then anything can drive the pet:
 
 ```bash
-mochi busy                 # → Mochi switches to "working" mode
-mochi done "tests passed"  # → Mochi celebrates + posts a notification
+mochi busy claude          # → that source starts working
+mochi done claude          # → that source finished → notify
 mochi say "build is green"  # → Mochi says it
 mochi alert "needs review" # → Mochi warns + posts a notification
 ```
 
-**Wire it into Claude Code** (`~/.claude/settings.json`) so it's automatic —
-busy while a turn runs, done when it stops:
+Mochi tracks each **source** separately, so if Claude Code and Codex run at
+the same time it stays in "working" mode until *both* finish, and notifies you
+per agent as each one completes.
+
+**Wire it into Claude Code** (`~/.claude/settings.json`) — busy while a turn
+runs, done when it stops:
 
 ```json
 {
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "mochi busy" }] }],
-    "Stop":             [{ "hooks": [{ "type": "command", "command": "mochi done" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "mochi busy claude" }] }],
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "mochi done claude" }] }],
     "Notification":     [{ "hooks": [{ "type": "command", "command": "mochi alert 需要你看一下" }] }]
   }
 }
@@ -98,8 +104,13 @@ busy while a turn runs, done when it stops:
 **Wire it into Codex** (`~/.codex/config.toml`) for the completion signal:
 
 ```toml
-notify = ["mochi", "done"]
+notify = ["mochi", "done", "codex"]
 ```
+
+> Codex's `notify` fires on turn completion (the "done" signal). It has no
+> matching "start" event, so Codex shows up as a completion/notification rather
+> than a sustained "working" animation unless you wrap the `codex` command
+> yourself with `mochi busy codex` / `mochi done codex`.
 
 > Notifications use `osascript display notification`, which needs notifications
 > allowed for Script Editor (and Focus / Do Not Disturb off) to show a banner.
@@ -131,7 +142,8 @@ Design principles:
 ## Roadmap
 
 - [x] **P1 — Core pet:** floating window, breathing/blinking blob, drag, poke, menu bar.
-- [ ] **P2 — More life:** follow-the-cursor mode, more idle animations, remember last position, multi-monitor polish.
+- [x] **P2 — More life:** follow-the-cursor mode, more idle animations (hop, look-around), remembers its last position.
+  - [ ] Further multi-monitor polish; sit on window edges / gravity.
 - [ ] **P3 — Companion:** reminders (water / breaks / pomodoro / hourly chime) shown as speech bubbles + notifications.
 - [ ] **P4 — AI pairing (the headline feature):**
   - [x] Talk to Mochi via a small input; route to the `claude` / `codex` CLIs and show replies in the bubble, with a "thinking" animation.

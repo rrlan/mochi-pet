@@ -28,6 +28,8 @@ struct PetView: View {
     @State private var walkBob = false
     /// 0 = rest, 1 = fully squashed; drives the poke reaction.
     @State private var squash: CGFloat = 0
+    /// Vertical offset for the one-shot hop animation.
+    @State private var hopOffset: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,6 +58,12 @@ struct PetView: View {
                 }
             } else {
                 withAnimation(.easeOut(duration: 0.2)) { walkBob = false }
+            }
+        }
+        .onChange(of: state.hopTrigger) { _, _ in
+            withAnimation(.interpolatingSpring(stiffness: 320, damping: 11)) { hopOffset = -26 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                withAnimation(.interpolatingSpring(stiffness: 260, damping: 9)) { hopOffset = 0 }
             }
         }
     }
@@ -102,7 +110,7 @@ struct PetView: View {
                 y: 1 - (breathe ? 0.03 : -0.03) - squash * 0.22,
                 anchor: .bottom
             )
-            .offset(y: walkBob ? -4 : 0)
+            .offset(y: (walkBob ? -4 : 0) + hopOffset)
         }
         .frame(width: 112, height: 100)
         .padding(.bottom, 8)

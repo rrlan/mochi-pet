@@ -39,4 +39,7 @@ final class PetState: ObservableObject {
 
     /// Incremented to trigger a one-shot "squash" reaction animation.
     @Published var pokeTrigger: Int = 0
+
+    /// Incremented to trigger a one-shot hop (jump) animation.
+    @Published var hopTrigger: Int = 0
 }
