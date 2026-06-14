@@ -69,7 +69,8 @@ struct PetView: View {
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
         }
-        .frame(height: 44)
+        .frame(height: 96)
+        .frame(maxWidth: .infinity)
         .animation(.spring(response: 0.32, dampingFraction: 0.6), value: state.speech)
     }
 
@@ -158,6 +159,10 @@ struct PetView: View {
             Circle()
                 .stroke(Palette.ink, lineWidth: 2)
                 .frame(width: 9, height: 9)
+        case .think:
+            Capsule()
+                .fill(Palette.ink)
+                .frame(width: 8, height: 2)   // neutral, focused little mouth
         default:
             SmileArc()
                 .stroke(Palette.ink, style: StrokeStyle(lineWidth: 2, lineCap: .round))
@@ -208,16 +213,16 @@ struct SpeechBubble: View {
         Text(text)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(Palette.ink)
-            .lineLimit(2)
+            .lineLimit(6)
             .multilineTextAlignment(.center)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(.white)
-                    .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
+                    .shadow(color: .black.opacity(0.18), radius: 5, y: 1)
             )
-            .frame(maxWidth: 150)
+            .frame(maxWidth: 252)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

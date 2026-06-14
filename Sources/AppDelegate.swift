@@ -14,13 +14,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: PetWindow!
     private var controller: PetController!
     private var statusItem: NSStatusItem!
+    private var chatPanel: ChatInputPanel!
+
+    private let engineDefaultsKey = "MochiAIEngine"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupWindow()
         controller = PetController(window: window, state: state)
+
+        // Restore the saved AI engine choice.
+        if let raw = UserDefaults.standard.string(forKey: engineDefaultsKey),
+           let saved = AIEngine(rawValue: raw) {
+            controller.engine = saved
+        }
+
+        // Talking to Mochi.
+        chatPanel = ChatInputPanel()
+        chatPanel.onSubmit = { [weak self] text in self?.controller.ask(text) }
+        controller.onRequestChat = { [weak self] in self?.openChat() }
+
         controller.start()
         setupStatusItem()
-        controller.say("你好! 我是 Mochi 🍡", duration: 3.5)
+        controller.say("你好! 我是 Mochi 🍡 双击我聊天", duration: 4.0)
+    }
+
+    private func openChat() {
+        chatPanel.present(above: window.frame)
     }
 
     // MARK: - Window
@@ -53,14 +72,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.title = "🍡"
 
         let menu = NSMenu()
+        menu.addItem(withTitle: "跟 Mochi 说话…", action: #selector(chatAction), keyEquivalent: "")
         menu.addItem(withTitle: "戳一下 Mochi", action: #selector(pokeAction), keyEquivalent: "")
         menu.addItem(withTitle: "睡觉 / 起床", action: #selector(sleepAction), keyEquivalent: "")
         menu.addItem(withTitle: "隐藏 / 显示", action: #selector(toggleVisibleAction), keyEquivalent: "")
+
+        // AI engine submenu.
+        let engineItem = NSMenuItem(title: "AI 引擎", action: nil, keyEquivalent: "")
+        let engineMenu = NSMenu()
+        for engine in AIEngine.allCases {
+            let item = NSMenuItem(title: engine.displayName,
+                                  action: #selector(selectEngineAction(_:)), keyEquivalent: "")
+            item.representedObject = engine.rawValue
+            item.state = (controller.engine == engine) ? .on : .off
+            item.target = self
+            engineMenu.addItem(item)
+        }
+        engineItem.submenu = engineMenu
+        menu.addItem(.separator())
+        menu.addItem(engineItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 Mochi", action: #selector(quitAction), keyEquivalent: "q")
-        menu.items.forEach { $0.target = self }
+        menu.items.forEach { if $0.target == nil { $0.target = self } }
 
         statusItem.menu = menu
+    }
+
+    @objc private func chatAction() {
+        openChat()
+    }
+
+    @objc private func selectEngineAction(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let engine = AIEngine(rawValue: raw) else { return }
+        controller.engine = engine
+        UserDefaults.standard.set(raw, forKey: engineDefaultsKey)
+        // Refresh checkmarks.
+        sender.menu?.items.forEach { $0.state = ($0 === sender) ? .on : .off }
+        controller.say("好的，改用 \(engine.displayName) 啦", duration: 2.5)
     }
 
     @objc private func pokeAction() {

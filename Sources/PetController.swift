@@ -16,6 +16,16 @@ final class PetController {
     private var brainTimer: Timer?
     private var walkTimer: Timer?
     private var blinkTimer: Timer?
+    private var thinkTimer: Timer?
+
+    /// Which AI CLI to talk to. Toggled from the menu, persisted by AppDelegate.
+    var engine: AIEngine = .claude
+
+    /// Called when the user double-clicks the pet; AppDelegate opens the chat input.
+    var onRequestChat: (() -> Void)?
+
+    /// True while waiting on an AI reply (suppresses autonomy).
+    private var isBusy = false
 
     /// Horizontal target the pet is walking toward (in screen coordinates).
     private var targetX: CGFloat = 0
@@ -33,6 +43,7 @@ final class PetController {
 
     func start() {
         window?.container.onPoke = { [weak self] in self?.poke() }
+        window?.container.onChat = { [weak self] in self?.onRequestChat?() }
         window?.container.onDragStart = { [weak self] in self?.beginDrag() }
         window?.container.onDragEnd = { [weak self] in self?.endDrag() }
         scheduleBrain()
@@ -52,7 +63,7 @@ final class PetController {
     /// we never interrupt a drag, poke reaction, or nap.
     private func decide() {
         defer { scheduleBrain() }
-        guard !isSleeping, state.action == .idle else { return }
+        guard !isSleeping, !isBusy, state.action == .idle else { return }
         if Double.random(in: 0...1) < 0.55 {
             startWalk()
         }
@@ -166,6 +177,62 @@ final class PetController {
             if self.state.speech == line {
                 self.state.speech = self.isSleeping ? "Zzz..." : nil
             }
+        }
+    }
+
+    // MARK: - AI conversation (P4)
+
+    /// Send the user's message to the AI CLI and show the reply in a bubble.
+    func ask(_ text: String) {
+        stopWalk()
+        if isSleeping { isSleeping = false }
+        isBusy = true
+        startThinking()
+
+        AIService(engine: engine).ask(text) { [weak self] result in
+            guard let self = self else { return }
+            self.stopThinking()
+            self.isBusy = false
+            self.state.action = .idle
+            switch result {
+            case .success(let reply):
+                self.say(self.shorten(reply), duration: 10)
+            case .failure(let err):
+                self.say(self.message(for: err), duration: 6)
+            }
+        }
+    }
+
+    private func startThinking() {
+        state.action = .think
+        var dots = 0
+        state.speech = "思考中"
+        thinkTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+            dots = (dots + 1) % 4
+            self?.state.speech = "思考中" + String(repeating: ".", count: dots)
+        }
+    }
+
+    private func stopThinking() {
+        thinkTimer?.invalidate()
+        thinkTimer = nil
+    }
+
+    /// Keep bubbles bite-sized even if the model gets chatty.
+    private func shorten(_ text: String, limit: Int = 120) -> String {
+        let oneLine = text.replacingOccurrences(of: "\n", with: " ")
+        if oneLine.count <= limit { return text }
+        return String(oneLine.prefix(limit)) + "…"
+    }
+
+    private func message(for error: AIError) -> String {
+        switch error {
+        case .notInstalled(let engine):
+            return "找不到 \(engine.displayName) 命令行 😣"
+        case .timedOut:
+            return "想太久了，我先歇会儿 😮‍💨"
+        case .launchFailed, .failed:
+            return "我有点没听清，再说一次？🥺"
         }
     }
 

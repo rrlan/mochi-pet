@@ -16,6 +16,7 @@ import AppKit
 /// callbacks the controller subscribes to.
 final class PetContainerView: NSView {
     var onPoke: (() -> Void)?
+    var onChat: (() -> Void)?
     var onDragStart: (() -> Void)?
     var onDragEnd: (() -> Void)?
 
@@ -24,11 +25,16 @@ final class PetContainerView: NSView {
     private var dragOffset: NSPoint = .zero
     private var didDrag = false
 
+    /// The blob occupies the bottom-center of the (wider) window. Only this
+    /// region is interactive — clicks elsewhere fall through to the desktop.
+    private var petRect: NSRect {
+        let w: CGFloat = 130, h: CGFloat = 120
+        return NSRect(x: (bounds.width - w) / 2, y: 0, width: w, height: h)
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // If the point lands anywhere in our subtree, claim it for ourselves
-        // (so the SwiftUI subview doesn't intercept). Outside our bounds we
-        // return nil, letting clicks fall through to whatever is behind.
-        return super.hitTest(point) == nil ? nil : self
+        let local = convert(point, from: superview)
+        return petRect.contains(local) ? self : nil
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -54,6 +60,8 @@ final class PetContainerView: NSView {
     override func mouseUp(with event: NSEvent) {
         if didDrag {
             onDragEnd?()
+        } else if event.clickCount >= 2 {
+            onChat?()           // double-click opens the chat input
         } else {
             onPoke?()
         }
@@ -64,9 +72,10 @@ final class PetContainerView: NSView {
 /// Borderless, transparent, always-on-top panel that floats the pet above
 /// normal windows without stealing focus from whatever app you're using.
 final class PetWindow: NSPanel {
-    /// Default canvas size. The pet sits at the bottom; the top portion is
-    /// reserved for a speech bubble.
-    static let canvasSize = NSSize(width: 160, height: 180)
+    /// Default canvas size. The pet sits at the bottom-center; the top portion
+    /// is reserved for the speech / AI-reply bubble. Wider than the blob so
+    /// multi-line replies have room.
+    static let canvasSize = NSSize(width: 280, height: 240)
 
     let container = PetContainerView()
 

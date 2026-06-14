@@ -21,9 +21,10 @@ No image assets · No Xcode required · ~Native, a few MB of RAM
 - 🖱️ **Interactive** — drag Mochi anywhere; poke it and it reacts.
 - 🎨 **Drawn entirely in code** — the character is pure SwiftUI vector shapes, so the whole app is a few MB and trivially restyleable. No sprite sheets to ship.
 - 🧰 **Menu-bar controlled** — a 🍡 icon lets you poke it, put it to sleep, hide it, or quit.
+- 🤖 **Talks to Claude Code / Codex** — double-click Mochi, type a message, and it routes to the `claude` or `codex` CLI and shows the reply in its speech bubble (with a "thinking" animation while it waits). Switch engines from the menu.
 - ⚙️ **No full Xcode needed** — builds with the Command Line Tools via a single `swiftc` invocation.
 
-> **The bigger idea:** Mochi is being built to become the *face of your AI coding sessions* — reacting when Claude Code / Codex is thinking, notifying you when an agent finishes, and letting you talk to them through a speech bubble. See the [roadmap](#roadmap).
+> **The bigger idea:** Mochi is the *face of your AI coding sessions*. Chatting already works; next it will react to live agent activity — animating while an agent runs and notifying you when it finishes. See the [roadmap](#roadmap).
 
 ## Quick start
 
@@ -52,9 +53,13 @@ To quit: use the menu-bar 🍡 → **退出 Mochi**, or `pkill -x Mochi`.
 | --- | --- |
 | Move Mochi | Click & drag it |
 | Poke it | Click it once (or menu → 戳一下) |
+| **Chat with it** | **Double-click it** (or menu → 跟 Mochi 说话…), type, press Return |
+| Pick AI engine | Menu → AI 引擎 → Claude / Codex |
 | Sleep / wake | Menu → 睡觉 / 起床 (or poke a sleeping Mochi) |
 | Hide / show | Menu → 隐藏 / 显示 |
 | Quit | Menu → 退出 Mochi |
+
+> **Chat requires** the `claude` and/or `codex` CLI on your `PATH`. Mochi invokes them through a login shell, so whatever works in your terminal works here. Replies are kept short and cute via a prompt wrapper.
 
 ## How it works
 
@@ -62,12 +67,14 @@ Mochi uses the **AppKit** application lifecycle (not the SwiftUI `App` lifecycle
 
 ```
 Sources/
-├── main.swift           # entry point — NSApplication + .accessory policy
-├── AppDelegate.swift     # builds the window, hosts SwiftUI, status-bar menu
-├── PetWindow.swift       # borderless NSPanel + mouse handling (drag / poke)
-├── PetState.swift        # observable model the view renders from
-├── PetController.swift    # the "brain": idle ↔ walk ↔ sleep state machine
-└── PetView.swift         # the SwiftUI character (blob, face, expressions)
+├── main.swift            # entry point — NSApplication + .accessory policy
+├── AppDelegate.swift      # builds the window, hosts SwiftUI, status-bar menu
+├── PetWindow.swift        # borderless NSPanel + mouse handling (drag / poke / double-click)
+├── PetState.swift         # observable model the view renders from
+├── PetController.swift     # the "brain": idle ↔ walk ↔ sleep ↔ think state machine
+├── PetView.swift          # the SwiftUI character (blob, face, expressions, bubble)
+├── AIService.swift        # runs the claude / codex CLI off-main, returns the reply
+└── ChatInputPanel.swift   # the little floating text field you talk to Mochi with
 ```
 
 Design principles:
@@ -82,8 +89,9 @@ Design principles:
 - [ ] **P2 — More life:** follow-the-cursor mode, more idle animations, remember last position, multi-monitor polish.
 - [ ] **P3 — Companion:** reminders (water / breaks / pomodoro / hourly chime) shown as speech bubbles + notifications.
 - [ ] **P4 — AI pairing (the headline feature):**
-  - Talk to Mochi via a small input; route to the `claude` / `codex` CLIs and show replies in the bubble.
-  - React to live agent activity — "thinking" animation while an agent runs, a notification when it finishes.
+  - [x] Talk to Mochi via a small input; route to the `claude` / `codex` CLIs and show replies in the bubble, with a "thinking" animation.
+  - [ ] React to live agent activity — animate while an agent runs, notify when it finishes.
+  - [ ] Conversation memory / multi-turn context.
 - [ ] **Skinning:** swap the code-drawn character for custom sprites; a simple theme format.
 - [ ] **Packaging:** signed/notarized release, Homebrew cask.
 

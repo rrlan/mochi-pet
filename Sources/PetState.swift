@@ -16,6 +16,7 @@ enum PetAction: Equatable {
     case sleep     // napping (eyes closed, Zzz)
     case drag      // being dragged by the user
     case poke      // reacting to a poke/click
+    case think     // waiting on an AI reply
 }
 
 /// Which way the pet faces. Used to mirror the sprite horizontally.
