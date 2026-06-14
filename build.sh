@@ -21,7 +21,9 @@ if [[ ! -f "$ICON" ]]; then
 fi
 
 echo "==> Compiling Swift sources"
+# Pin the deployment target: the UI uses macOS 14 APIs (e.g. onChange(of:initial:)).
 swiftc -O \
+  -target "$(uname -m)-apple-macos14.0" \
   "$ROOT"/Sources/*.swift \
   -o "$BIN" \
   -framework AppKit \
@@ -42,7 +44,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSUIElement</key><true/>
-    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAppleEventsUsageDescription</key>

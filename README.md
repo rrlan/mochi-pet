@@ -24,9 +24,17 @@
 - 🎨 **形象可更换** —— 默认是纯代码画的薄荷史莱姆；也能导入自己的图片，或用几张参考图生成一套多状态形象包（上图右边的猫咪，就是换过的自定义形象）。
 - ⚙️ **无需完整 Xcode** —— 只用 Command Line Tools，一条 `swiftc` 命令构建。
 
-## 快速开始
+## 下载安装
 
-需要 macOS 13+ 和 Xcode **Command Line Tools**（`xcode-select --install`），**不需要**完整 Xcode。
+到 [Releases](https://github.com/rrlan/mochi-pet/releases/latest) 下载 `Mochi-x.x.x.dmg`，打开后把 **Mochi** 拖进 **Applications**。通用版（Apple Silicon + Intel），需 **macOS 14+**。
+
+> ⚠️ **首次打开**：这个 DMG 没做 Apple 公证，macOS 会先拦一下（「无法验证开发者」）。**右键点 Mochi → 打开 → 再点"打开"** 一次即可（或到 系统设置 → 隐私与安全性 → 点"仍要打开"）。之后正常双击启动。
+
+菜单栏出现 🍡 就表示在跑了。
+
+## 从源码构建
+
+或者自己编 —— 只需 Xcode **Command Line Tools**（`xcode-select --install`），**不需要**完整 Xcode，macOS 14+：
 
 ```bash
 git clone https://github.com/rrlan/mochi-pet.git desk-pet
