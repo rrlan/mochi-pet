@@ -142,9 +142,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appearanceItem = NSMenuItem(title: "形象", action: nil, keyEquivalent: "")
         let appearanceMenu = NSMenu()
+        appearanceMenu.addItem(withTitle: "导入形象包…", action: #selector(importPackAction), keyEquivalent: "")
         appearanceMenu.addItem(withTitle: "导入形态图片…", action: #selector(importAppearancesAction), keyEquivalent: "")
         appearanceMenu.addItem(withTitle: "打开形态文件夹", action: #selector(openAppearancesFolderAction), keyEquivalent: "")
         appearanceMenu.addItem(withTitle: "恢复默认 Mochi", action: #selector(resetAppearanceAction), keyEquivalent: "")
+        appearanceMenu.items.forEach { $0.target = self }
         appearanceItem.submenu = appearanceMenu
         menu.addItem(appearanceItem)
 
@@ -174,6 +176,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(on, forKey: monitorDefaultsKey)
         if on { monitor.start() } else { monitor.stop() }
         controller.say(on ? "我会盯着你的 AI 啦 👀" : "好，不盯了", duration: 2.5)
+    }
+
+    @objc private func importPackAction() {
+        let panel = NSOpenPanel()
+        panel.title = "选择形象包文件夹"
+        panel.message = "选一个形象包目录（含 companion/work/rest/slack/drag.png，以及可选的 walk/ 文件夹）。"
+        panel.prompt = "导入"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+
+        do {
+            try AppearanceStore.importPack(from: folder)
+            state.customAppearances = AppearanceStore.loadAll()
+            state.customWalkFrames = AppearanceStore.loadWalkFrames()
+            controller.say("形象包装好啦~", duration: 2.5)
+        } catch {
+            controller.say("这个文件夹里没找到形象图 😣", duration: 3)
+        }
     }
 
     @objc private func importAppearancesAction() {

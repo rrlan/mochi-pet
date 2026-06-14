@@ -73,6 +73,33 @@ enum AppearanceStore {
         return saved
     }
 
+    /// Install a whole appearance-pack folder at once: the state images in its
+    /// root (assigned to roles by filename) plus any `walk/` frames. Replaces
+    /// the current pack so it acts as a clean "switch to this pack".
+    static func importPack(from folder: URL) throws {
+        let fm = FileManager.default
+        let pngs: (URL) -> [URL] = { dir in
+            ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension.lowercased() == "png" }
+        }
+        let assignments = assign(pngs(folder))
+        let walkFrames = pngs(folder.appendingPathComponent("walk", isDirectory: true))
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        guard !assignments.isEmpty || !walkFrames.isEmpty else { throw AppearanceError.unreadableImage }
+
+        clear()
+        try fm.createDirectory(at: appearancesDir, withIntermediateDirectories: true)
+        for (role, src) in assignments {
+            try? fm.copyItem(at: src, to: imageURL(for: role))
+        }
+        if !walkFrames.isEmpty {
+            try fm.createDirectory(at: walkFramesDir, withIntermediateDirectories: true)
+            for (i, src) in walkFrames.enumerated() {
+                try? fm.copyItem(at: src, to: walkFramesDir.appendingPathComponent(String(format: "frame_%02d.png", i)))
+            }
+        }
+    }
+
     static func clear() {
         try? FileManager.default.removeItem(at: appearancesDir)
         try? FileManager.default.removeItem(at: legacyImageURL)
