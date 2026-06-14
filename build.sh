@@ -47,4 +47,8 @@ echo "==> Ad-hoc signing"
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || \
   echo "   (codesign skipped — app still runs unsigned locally)"
 
+# Make the companion CLI executable.
+chmod +x "$ROOT/bin/mochi" 2>/dev/null || true
+
 echo "==> Done: $APP"
+echo "    CLI: $ROOT/bin/mochi  (symlink it onto your PATH to use from hooks)"

@@ -1,0 +1,34 @@
+#!/bin/bash
+#
+# mochi — talk to your running Mochi desktop pet from the shell, scripts, or
+# Claude Code / Codex hooks.
+#
+#   mochi busy            # Mochi enters "working" mode
+#   mochi done [message]  # Mochi celebrates + posts a notification
+#   mochi say  <text>     # Mochi says something
+#   mochi alert <text>    # Mochi warns + posts a notification
+#   mochi <free text>     # shorthand for: mochi say <free text>
+#
+set -euo pipefail
+
+DIR="${MOCHI_HOME:-$HOME/.mochi}"
+mkdir -p "$DIR"
+LOG="$DIR/inbox.log"
+
+cmd="${1:-}"
+[ "$#" -gt 0 ] && shift || true
+rest="$*"
+
+case "$cmd" in
+  busy|done|say|alert)
+    printf '%s %s\n' "$cmd" "$rest" >> "$LOG"
+    ;;
+  "" )
+    echo "usage: mochi {busy|done|say|alert} [text]" >&2
+    exit 2
+    ;;
+  * )
+    # Bare text → treat as `say`.
+    printf 'say %s\n' "$cmd $rest" >> "$LOG"
+    ;;
+esac

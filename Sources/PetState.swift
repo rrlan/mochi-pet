@@ -17,6 +17,7 @@ enum PetAction: Equatable {
     case drag      // being dragged by the user
     case poke      // reacting to a poke/click
     case think     // waiting on an AI reply
+    case work      // an external coding agent is busy
 }
 
 /// Which way the pet faces. Used to mirror the sprite horizontally.

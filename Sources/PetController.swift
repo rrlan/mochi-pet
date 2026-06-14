@@ -180,6 +180,71 @@ final class PetController {
         }
     }
 
+    // MARK: - External agent awareness (bridge events)
+
+    private var workTimer: Timer?
+
+    /// Dispatch a one-line event from the `mochi` CLI / Claude Code / Codex hooks.
+    func handleBridgeEvent(type: String, text: String) {
+        switch type {
+        case "busy":
+            beginWork()
+        case "done":
+            endWork(text.isEmpty ? "搞定啦！✅" : text)
+        case "say":
+            guard !text.isEmpty else { return }
+            wakeIfNeeded()
+            say(text, duration: 6)
+        case "alert":
+            guard !text.isEmpty else { return }
+            wakeIfNeeded()
+            say("⚠️ " + text, duration: 8)
+            notify(title: "Mochi", body: text)
+        default:
+            break
+        }
+    }
+
+    private func beginWork() {
+        stopWalk()
+        wakeIfNeeded()
+        isBusy = true
+        state.action = .work
+        let bubbles = ["码字中…", "🔨 干活中", "🤔 想想…", "👀 看代码", "⌨️ ……"]
+        var i = 0
+        state.speech = bubbles[0]
+        workTimer?.invalidate()
+        workTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: true) { [weak self] _ in
+            i = (i + 1) % bubbles.count
+            self?.state.speech = bubbles[i]
+        }
+    }
+
+    private func endWork(_ message: String) {
+        workTimer?.invalidate()
+        workTimer = nil
+        isBusy = false
+        state.action = .idle
+        state.pokeTrigger += 1          // little celebratory bounce
+        say(message, duration: 6)
+        notify(title: "Mochi 🍡", body: message)
+    }
+
+    private func wakeIfNeeded() {
+        if isSleeping {
+            isSleeping = false
+            if state.action == .sleep { state.action = .idle }
+        }
+    }
+
+    /// Post a macOS notification via osascript (no entitlements required).
+    private func notify(title: String, body: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", "display notification \(body.appleScriptQuoted) with title \(title.appleScriptQuoted)"]
+        try? process.run()
+    }
+
     // MARK: - AI conversation (P4)
 
     /// Send the user's message to the AI CLI and show the reply in a bubble.
@@ -244,5 +309,13 @@ final class PetController {
                 self?.state.speech = self?.isSleeping == true ? "Zzz..." : nil
             }
         }
+    }
+}
+
+private extension String {
+    /// Wrap + escape this string as an AppleScript string literal.
+    var appleScriptQuoted: String {
+        "\"" + replacingOccurrences(of: "\\", with: "\\\\")
+                  .replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 }

@@ -61,6 +61,50 @@ To quit: use the menu-bar 🍡 → **退出 Mochi**, or `pkill -x Mochi`.
 
 > **Chat requires** the `claude` and/or `codex` CLI on your `PATH`. Mochi invokes them through a login shell, so whatever works in your terminal works here. Replies are kept short and cute via a prompt wrapper.
 
+## Pairing with Claude Code / Codex
+
+Mochi can react to your AI coding sessions: look busy while an agent is working,
+celebrate (and post a notification) when it finishes, or relay any message.
+
+It listens on a tiny event channel. The `mochi` CLI (in `bin/`) writes events;
+Mochi reacts. Put `mochi` on your `PATH` first:
+
+```bash
+ln -sf "$PWD/bin/mochi" /usr/local/bin/mochi   # or any dir on your PATH
+```
+
+Then anything can drive the pet:
+
+```bash
+mochi busy                 # → Mochi switches to "working" mode
+mochi done "tests passed"  # → Mochi celebrates + posts a notification
+mochi say "build is green"  # → Mochi says it
+mochi alert "needs review" # → Mochi warns + posts a notification
+```
+
+**Wire it into Claude Code** (`~/.claude/settings.json`) so it's automatic —
+busy while a turn runs, done when it stops:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "mochi busy" }] }],
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "mochi done" }] }],
+    "Notification":     [{ "hooks": [{ "type": "command", "command": "mochi alert 需要你看一下" }] }]
+  }
+}
+```
+
+**Wire it into Codex** (`~/.codex/config.toml`) for the completion signal:
+
+```toml
+notify = ["mochi", "done"]
+```
+
+> Notifications use `osascript display notification`, which needs notifications
+> allowed for Script Editor (and Focus / Do Not Disturb off) to show a banner.
+> The pet's own speech bubble always works regardless.
+
 ## How it works
 
 Mochi uses the **AppKit** application lifecycle (not the SwiftUI `App` lifecycle) so it can own a borderless, non-activating, transparent floating panel — which is much easier in AppKit. The character itself is **SwiftUI**, hosted inside that panel.
@@ -74,7 +118,8 @@ Sources/
 ├── PetController.swift     # the "brain": idle ↔ walk ↔ sleep ↔ think state machine
 ├── PetView.swift          # the SwiftUI character (blob, face, expressions, bubble)
 ├── AIService.swift        # runs the claude / codex CLI off-main, returns the reply
-└── ChatInputPanel.swift   # the little floating text field you talk to Mochi with
+├── ChatInputPanel.swift   # the little floating text field you talk to Mochi with
+└── MochiBridge.swift      # watches ~/.mochi/inbox.log for events from hooks/CLI
 ```
 
 Design principles:
@@ -90,7 +135,7 @@ Design principles:
 - [ ] **P3 — Companion:** reminders (water / breaks / pomodoro / hourly chime) shown as speech bubbles + notifications.
 - [ ] **P4 — AI pairing (the headline feature):**
   - [x] Talk to Mochi via a small input; route to the `claude` / `codex` CLIs and show replies in the bubble, with a "thinking" animation.
-  - [ ] React to live agent activity — animate while an agent runs, notify when it finishes.
+  - [x] React to live agent activity — busy while an agent runs, celebrate + notify when it finishes (via the `mochi` CLI + hooks).
   - [ ] Conversation memory / multi-turn context.
 - [ ] **Skinning:** swap the code-drawn character for custom sprites; a simple theme format.
 - [ ] **Packaging:** signed/notarized release, Homebrew cask.

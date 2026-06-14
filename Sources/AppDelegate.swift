@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: PetController!
     private var statusItem: NSStatusItem!
     private var chatPanel: ChatInputPanel!
+    private var bridge: MochiBridge!
 
     private let engineDefaultsKey = "MochiAIEngine"
 
@@ -32,6 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chatPanel = ChatInputPanel()
         chatPanel.onSubmit = { [weak self] text in self?.controller.ask(text) }
         controller.onRequestChat = { [weak self] in self?.openChat() }
+
+        // Listen for events from the `mochi` CLI / Claude Code / Codex hooks.
+        bridge = MochiBridge { [weak self] type, text in
+            self?.controller.handleBridgeEvent(type: type, text: text)
+        }
+        bridge.start()
 
         controller.start()
         setupStatusItem()

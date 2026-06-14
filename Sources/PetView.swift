@@ -159,7 +159,7 @@ struct PetView: View {
             Circle()
                 .stroke(Palette.ink, lineWidth: 2)
                 .frame(width: 9, height: 9)
-        case .think:
+        case .think, .work:
             Capsule()
                 .fill(Palette.ink)
                 .frame(width: 8, height: 2)   // neutral, focused little mouth
