@@ -267,6 +267,7 @@ final class PetController {
     /// Mochi stays in "working" mode until this is empty — handling the case
     /// where Claude Code and Codex run concurrently.
     private var activeAgents: Set<String> = []
+    private var workStartedAt: Date?
 
     /// Dispatch a one-line event from the `mochi` CLI / Claude Code / Codex hooks.
     func handleBridgeEvent(type: String, text: String) {
@@ -292,6 +293,7 @@ final class PetController {
     private func enterWork(source: String) {
         wakeIfNeeded()
         stopWalk()
+        if activeAgents.isEmpty { workStartedAt = Date() }
         activeAgents.insert(source)
         isBusy = true
         state.action = .work
@@ -308,15 +310,23 @@ final class PetController {
     private func finishWork(source: String) {
         activeAgents.remove(source)
         let label = (source == "agent") ? "" : "\(source) "
-        notify(title: "Mochi 🍡", body: "\(label)跑完啦 ✅")
+
+        // Only make noise for substantial work — skip quick back-and-forth turns.
+        let elapsed = workStartedAt.map { Date().timeIntervalSince($0) } ?? 999
+        let substantial = elapsed > 12
+
+        if substantial {
+            notify(title: "Mochi 🍡", body: "\(label)跑完啦 ✅")
+        }
 
         if activeAgents.isEmpty {
             workTimer?.invalidate()
             workTimer = nil
             isBusy = false
+            workStartedAt = nil
             state.action = .idle
             state.pokeTrigger += 1                  // little celebratory bounce
-            say("\(label)搞定！✅", duration: 6)
+            say(substantial ? "\(label)搞定！✅" : "好啦~", duration: substantial ? 6 : 2)
         } else {
             // Others still working — refresh the bubble to the new count.
             state.speech = workBubble()

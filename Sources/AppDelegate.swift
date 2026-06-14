@@ -16,8 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var chatPanel: ChatInputPanel!
     private var bridge: MochiBridge!
+    private var monitor: AgentMonitor!
 
     private let engineDefaultsKey = "MochiAIEngine"
+    private let monitorDefaultsKey = "MochiSenseAgents"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupWindow()
@@ -39,6 +41,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.controller.handleBridgeEvent(type: type, text: text)
         }
         bridge.start()
+
+        // Auto-detect working agents by watching their transcript files. Covers
+        // CLI, ACP, and the desktop apps (which don't fire shell hooks).
+        monitor = AgentMonitor { [weak self] source, active in
+            self?.controller.handleBridgeEvent(type: active ? "busy" : "done", text: source)
+        }
+        if UserDefaults.standard.object(forKey: monitorDefaultsKey) as? Bool ?? true {
+            monitor.start()
+        }
 
         controller.start()
         setupStatusItem()
@@ -103,6 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "忘掉刚才的对话", action: #selector(clearHistoryAction), keyEquivalent: "")
         menu.addItem(withTitle: "戳一下 Mochi", action: #selector(pokeAction), keyEquivalent: "")
         menu.addItem(withTitle: "跟随鼠标", action: #selector(toggleFollowAction(_:)), keyEquivalent: "")
+
+        let senseItem = NSMenuItem(title: "感知 AI 工作", action: #selector(toggleSenseAction(_:)), keyEquivalent: "")
+        senseItem.state = (UserDefaults.standard.object(forKey: monitorDefaultsKey) as? Bool ?? true) ? .on : .off
+        senseItem.target = self
+        menu.addItem(senseItem)
         menu.addItem(withTitle: "睡觉 / 起床", action: #selector(sleepAction), keyEquivalent: "")
         menu.addItem(withTitle: "隐藏 / 显示", action: #selector(toggleVisibleAction), keyEquivalent: "")
 
@@ -139,6 +155,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let on = !controller.isFollowing
         controller.setFollowing(on)
         sender.state = on ? .on : .off
+    }
+
+    @objc private func toggleSenseAction(_ sender: NSMenuItem) {
+        let on = sender.state != .on
+        sender.state = on ? .on : .off
+        UserDefaults.standard.set(on, forKey: monitorDefaultsKey)
+        if on { monitor.start() } else { monitor.stop() }
+        controller.say(on ? "我会盯着你的 AI 啦 👀" : "好，不盯了", duration: 2.5)
     }
 
     @objc private func selectEngineAction(_ sender: NSMenuItem) {

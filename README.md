@@ -65,10 +65,31 @@ To quit: use the menu-bar 🍡 → **退出 Mochi**, or `pkill -x Mochi`.
 
 ## Pairing with Claude Code / Codex
 
-Mochi can react to your AI coding sessions: look busy while an agent is working,
-celebrate (and post a notification) when it finishes, or relay any message.
+Mochi reacts to your AI coding sessions: looks busy while an agent is working,
+celebrates (and posts a notification) when it finishes, or relays any message.
 
-It listens on a tiny event channel. The `mochi` CLI (in `bin/`) writes events;
+### Automatic (recommended) — works with the desktop apps too
+
+Mochi **auto-detects** working agents by watching the session transcript files
+they write — no setup required:
+
+- Claude Code → `~/.claude/projects/**/*.jsonl`
+- Codex → `~/.codex/sessions/**/*.jsonl`
+
+A transcript that's actively growing means that agent is mid-turn; when it goes
+quiet, the turn is done. This is the **only** approach that works across *all*
+surfaces — CLI, ACP, **and the desktop apps (Claude Code desktop, Codex App)**,
+which do not fire shell hooks. (CPU can't be used — LLM generation is
+network-bound, near-zero CPU.) It tracks Claude and Codex separately, so if
+both run at once Mochi stays busy until both finish.
+
+Toggle it from the menu: **感知 AI 工作**. Caveat: Claude Code's *sandboxed*
+desktop mode (Cowork) may write its transcript inside the sandbox rather than to
+`~/.claude/projects`, in which case it can't be detected from outside.
+
+### Manual / explicit (the `mochi` CLI + hooks)
+
+You can also drive Mochi explicitly. The `mochi` CLI (in `bin/`) writes events;
 Mochi reacts. Put `mochi` on your `PATH` first:
 
 ```bash
@@ -116,6 +137,10 @@ notify = ["mochi", "done", "codex"]
 > allowed for Script Editor (and Focus / Do Not Disturb off) to show a banner.
 > The pet's own speech bubble always works regardless.
 
+> If you use the explicit hooks above, turn **off** the auto-detection
+> (menu → 感知 AI 工作) for that tool, or both will fire and you'll get
+> double busy/done events.
+
 ## How it works
 
 Mochi uses the **AppKit** application lifecycle (not the SwiftUI `App` lifecycle) so it can own a borderless, non-activating, transparent floating panel — which is much easier in AppKit. The character itself is **SwiftUI**, hosted inside that panel.
@@ -130,7 +155,8 @@ Sources/
 ├── PetView.swift          # the SwiftUI character (blob, face, expressions, bubble)
 ├── AIService.swift        # runs the claude / codex CLI off-main, returns the reply
 ├── ChatInputPanel.swift   # the little floating text field you talk to Mochi with
-└── MochiBridge.swift      # watches ~/.mochi/inbox.log for events from hooks/CLI
+├── MochiBridge.swift      # watches ~/.mochi/inbox.log for events from hooks/CLI
+└── AgentMonitor.swift     # auto-detects working agents via their transcript files
 ```
 
 Design principles:
