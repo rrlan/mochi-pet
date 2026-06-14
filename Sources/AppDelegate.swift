@@ -19,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var bridge: MochiBridge!
     private var monitor: AgentMonitor!
 
+    private var updateMenuItem: NSMenuItem?
+    private var latestReleaseURL: String?
+
     private let monitorDefaultsKey = "MochiSenseAgents"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -58,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start()
         setupStatusItem()
         controller.say("双击我选动作", duration: 4.0)
+        checkForUpdates(manual: false)
     }
 
     private func openActionPanel() {
@@ -156,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(senseItem)
         menu.addItem(withTitle: "睡觉 / 起床", action: #selector(sleepAction), keyEquivalent: "")
         menu.addItem(withTitle: "隐藏 / 显示", action: #selector(toggleVisibleAction), keyEquivalent: "")
+        menu.addItem(withTitle: "检查更新…", action: #selector(checkUpdateAction), keyEquivalent: "")
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 Mochi", action: #selector(quitAction), keyEquivalent: "q")
@@ -251,5 +256,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitAction() {
         NSApp.terminate(nil)
+    }
+
+    // MARK: - Update check
+
+    @objc private func checkUpdateAction() { checkForUpdates(manual: true) }
+
+    private func checkForUpdates(manual: Bool) {
+        UpdateChecker.checkLatest { [weak self] release in
+            guard let self = self else { return }
+            if let release = release {
+                self.presentUpdate(release)
+            } else if manual {
+                self.controller.say("已是最新版 v\(UpdateChecker.currentVersion)", duration: 3)
+            }
+        }
+    }
+
+    private func presentUpdate(_ release: UpdateChecker.Release) {
+        latestReleaseURL = release.url
+        let title = "🔔 有新版 v\(release.version)（点此下载）"
+        if let item = updateMenuItem {
+            item.title = title
+        } else if let menu = statusItem.menu {
+            let item = NSMenuItem(title: title, action: #selector(openLatestRelease), keyEquivalent: "")
+            item.target = self
+            menu.insertItem(item, at: 0)
+            menu.insertItem(.separator(), at: 1)
+            updateMenuItem = item
+        }
+        controller.say("有新版 v\(release.version)，菜单可下载 🔔", duration: 5)
+    }
+
+    @objc private func openLatestRelease() {
+        if let s = latestReleaseURL, let url = URL(string: s) {
+            NSWorkspace.shared.open(url)
+        }
     }
 }
