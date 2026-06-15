@@ -7,8 +7,39 @@
 
 import AppKit
 
-final class FirstMouseButton: NSButton {
+/// A soft tinted pill button — brand-colored label on a light brand-tinted
+/// background, with a subtle hover. Renders consistently under .aqua.
+final class PillButton: NSButton {
+    private let tint: NSColor
+
+    init(title: String, color: NSColor) {
+        self.tint = color
+        super.init(frame: .zero)
+        isBordered = false
+        wantsLayer = true
+        layer?.cornerRadius = 9
+        attributedTitle = NSAttributedString(string: title, attributes: [
+            .foregroundColor: color,
+            .font: NSFont.systemFont(ofSize: 12.5, weight: .semibold),
+        ])
+        setBackground(hover: false)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+    override func mouseEntered(with event: NSEvent) { setBackground(hover: true) }
+    override func mouseExited(with event: NSEvent) { setBackground(hover: false) }
+
+    private func setBackground(hover: Bool) {
+        layer?.backgroundColor = tint.withAlphaComponent(hover ? 0.20 : 0.11).cgColor
+    }
 }
 
 final class ActionPanel: NSPanel {
@@ -19,7 +50,7 @@ final class ActionPanel: NSPanel {
     var onOpenMemoFile: (() -> Void)?
     var onSubmitMemo: ((String) -> Void)?
 
-    static let panelSize = NSSize(width: 364, height: 88)
+    static let panelSize = NSSize(width: 364, height: 94)
 
     init() {
         super.init(contentRect: NSRect(origin: .zero, size: ActionPanel.panelSize),
@@ -41,8 +72,10 @@ final class ActionPanel: NSPanel {
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.white.cgColor
         container.layer?.cornerRadius = 16
+        container.layer?.borderWidth = 1
+        container.layer?.borderColor = NSColor(white: 0.90, alpha: 1).cgColor
 
-        field.frame = NSRect(x: 14, y: 50, width: ActionPanel.panelSize.width - 28, height: 22)
+        field.frame = NSRect(x: 16, y: 58, width: ActionPanel.panelSize.width - 32, height: 22)
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
@@ -55,19 +88,22 @@ final class ActionPanel: NSPanel {
         field.delegate = self
         container.addSubview(field)
 
-        let items: [(String, Selector)] = [
-            ("Claude", #selector(openClaude)),
-            ("Codex", #selector(openCodex)),
-            ("备忘录", #selector(openMemoFile)),
+        let sep = NSView(frame: NSRect(x: 16, y: 50, width: ActionPanel.panelSize.width - 32, height: 1))
+        sep.wantsLayer = true
+        sep.layer?.backgroundColor = NSColor(white: 0.92, alpha: 1).cgColor
+        container.addSubview(sep)
+
+        let items: [(String, Selector, NSColor)] = [
+            ("Claude", #selector(openClaude),   NSColor(red: 0.85, green: 0.47, blue: 0.34, alpha: 1)),
+            ("Codex",  #selector(openCodex),    NSColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1)),
+            ("备忘录",  #selector(openMemoFile), NSColor(red: 0.17, green: 0.62, blue: 0.49, alpha: 1)),
         ]
-        let buttonWidth: CGFloat = 108
-        let gap: CGFloat = 8
-        var x: CGFloat = 14
-        for (title, action) in items {
-            let button = FirstMouseButton(frame: NSRect(x: x, y: 10, width: buttonWidth, height: 30))
-            button.title = title
-            button.bezelStyle = .rounded
-            button.font = .systemFont(ofSize: 12, weight: .medium)
+        let gap: CGFloat = 9
+        let buttonWidth = (ActionPanel.panelSize.width - 32 - gap * 2) / 3
+        var x: CGFloat = 16
+        for (title, action, color) in items {
+            let button = PillButton(title: title, color: color)
+            button.frame = NSRect(x: x, y: 12, width: buttonWidth, height: 32)
             button.target = self
             button.action = action
             container.addSubview(button)
