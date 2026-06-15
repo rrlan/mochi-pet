@@ -116,7 +116,7 @@ final class PetContainerView: NSView {
         } else if let target = mouseDownBubbleTarget {
             onBubbleClick?(target)
         } else if event.clickCount >= 2 {
-            onChat?()           // double-click opens the chat input
+            onChat?()           // double-click opens the action panel
         } else {
             onPoke?()
         }

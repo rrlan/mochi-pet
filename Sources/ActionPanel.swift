@@ -31,6 +31,9 @@ final class ActionPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = true
         level = .floating
+        // The container is white, so pin a light appearance — otherwise in dark
+        // mode the buttons' default (white) title text is invisible on white.
+        appearance = NSAppearance(named: .aqua)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isReleasedWhenClosed = false
 
