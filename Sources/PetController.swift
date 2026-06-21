@@ -11,6 +11,14 @@ import AppKit
 import ApplicationServices
 
 final class PetController {
+    /// `avatar` is the working cat (senses agents, shows bubbles, owns the saved
+    /// position and the double-click action panel). `ambient` cats only run the
+    /// autonomous roam/rest loop — they're pure desktop companions.
+    enum Role {
+        case avatar
+        case ambient
+    }
+
     private struct WorkSession {
         let id: String
         let source: String
@@ -27,11 +35,13 @@ final class PetController {
 
     private weak var window: PetWindow?
     private let state: PetState
+    let role: Role
 
     private var brainTimer: Timer?
     private var walkTimer: Timer?
     private var blinkTimer: Timer?
     private var followTimer: Timer?
+    private var followMonitor: Any?   // global right-click monitor while following
 
     private(set) var isFollowing = false
     private let posKeyX = "MochiPosX"
@@ -48,23 +58,33 @@ final class PetController {
     /// Walk speed in points per tick (~60 ticks/sec).
     private let speed: CGFloat = 1.4
 
-    private(set) var isSleeping = false
+    private(set) var isSleeping = false {
+        didSet { window?.container.isSleeping = isSleeping }   // keep right-click label current
+    }
 
     /// Last time anything happened — an agent ran, or the user interacted. After
     /// `restAfterIdle` of nothing, the pet naps (sleep state → `rest.png`).
     private var lastActivityAt = Date()
     private let restAfterIdle: TimeInterval = 900   // 15 minutes
 
-    init(window: PetWindow, state: PetState) {
+    init(window: PetWindow, state: PetState, role: Role = .avatar) {
         self.window = window
         self.state = state
+        self.role = role
     }
 
     // MARK: - Lifecycle
 
     func start() {
         window?.container.onPoke = { [weak self] in self?.poke() }
-        window?.container.onChat = { [weak self] in self?.onDoubleClick?() }
+        window?.container.onChat = { [weak self] in
+            guard let self = self else { return }
+            if self.isSleeping {
+                self.toggleSleep()       // double-click wakes a sleeping pet
+            } else {
+                self.onDoubleClick?()    // otherwise open the action panel
+            }
+        }
         window?.container.onBubbleClick = { [weak self] target in
             if target.requiresApproval {
                 self?.approveAgentSession(source: target.source, sessionID: target.sessionID)
@@ -74,8 +94,25 @@ final class PetController {
         }
         window?.container.onDragStart = { [weak self] in self?.beginDrag() }
         window?.container.onDragEnd = { [weak self] in self?.endDrag() }
+        window?.container.onToggleFollow = { [weak self] in
+            guard let self = self else { return }
+            self.setFollowing(!self.isFollowing)
+        }
+        window?.container.onToggleSleep = { [weak self] in self?.toggleSleep() }
+        window?.container.isFollowing = isFollowing
+        window?.container.isSleeping = isSleeping
         scheduleBrain()
         scheduleBlink()
+    }
+
+    /// Tear down all timers so an ambient cat can be removed cleanly (no ghost
+    /// timers keep firing after its window is gone).
+    func stop() {
+        brainTimer?.invalidate(); brainTimer = nil
+        walkTimer?.invalidate(); walkTimer = nil
+        blinkTimer?.invalidate(); blinkTimer = nil
+        followTimer?.invalidate(); followTimer = nil
+        if let m = followMonitor { NSEvent.removeMonitor(m); followMonitor = nil }
     }
 
     // MARK: - Idle "brain" loop
@@ -159,17 +196,24 @@ final class PetController {
 
     func setFollowing(_ on: Bool) {
         isFollowing = on
+        window?.container.isFollowing = on   // keep the right-click checkmark in sync
         stopWalk()
         if on {
             markActivity()
             wakeIfNeeded()
-            say("追你啦~ 🏃", duration: 1.8)
+            say("追你啦~ 右键任意处可停 🏃", duration: 2.2)
             followTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
                 self?.followStep()
+            }
+            // The pet trails the cursor and is hard to click, so let a right-click
+            // ANYWHERE on screen stop the chase (the window can't catch the event).
+            followMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] _ in
+                self?.setFollowing(false)
             }
         } else {
             followTimer?.invalidate()
             followTimer = nil
+            if let m = followMonitor { NSEvent.removeMonitor(m); followMonitor = nil }
             if state.action == .walk || state.action == .relax { state.action = .idle }
             savePosition()
         }
@@ -199,7 +243,9 @@ final class PetController {
     // MARK: - Position persistence
 
     func savePosition() {
-        guard let frame = window?.frame else { return }
+        // Only the working cat persists its spot; ambient cats roam from a fresh
+        // random position each launch and must not clobber the avatar's keys.
+        guard role == .avatar, let frame = window?.frame else { return }
         UserDefaults.standard.set(Double(frame.origin.x), forKey: posKeyX)
         UserDefaults.standard.set(Double(frame.origin.y), forKey: posKeyY)
     }
@@ -284,8 +330,8 @@ final class PetController {
             return
         }
         if isSleeping {
-            // Poking a sleeping pet wakes it up gently.
-            toggleSleep()
+            // A single poke just stirs a sleeping pet; double-click to wake it.
+            state.pokeTrigger += 1
             return
         }
         state.pokeTrigger += 1

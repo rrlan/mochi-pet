@@ -24,15 +24,20 @@ pkill -x Mochi # 停止
 
 ```
 Sources/
-├── main.swift          # NSApplication 入口，.accessory 策略
-├── AppDelegate.swift    # 建窗口、host SwiftUI、菜单栏
-├── PetWindow.swift      # borderless nonactivating NSPanel + 鼠标处理
-├── PetState.swift       # ObservableObject，渲染的单一事实源
-├── PetController.swift   # 大脑：idle↔walk↔sleep 状态机 + 交互反应
-└── PetView.swift        # SwiftUI 形象（blob/脸/表情/气泡）
+├── main.swift            # NSApplication 入口，.accessory 策略
+├── AppDelegate.swift      # 建 colony、host SwiftUI、菜单栏、reconcileColony()
+├── PetColony.swift        # PetUnit：window+state+controller 一只猫的捆绑单元
+├── PetWindow.swift        # borderless nonactivating NSPanel + 鼠标处理
+├── PetState.swift         # ObservableObject，渲染的单一事实源
+├── PetController.swift     # 大脑：idle↔walk↔sleep 状态机 + 交互；role=avatar/ambient
+├── PetView.swift          # SwiftUI 形象（blob/脸/表情/气泡）
+├── AppearanceStore.swift  # 形象包库（~/.mochi/packs/<slug>/）：active=主猫，roamers=氛围猫
+└── AppearancePicker.swift # 选角面板（缩略图：点=主猫，爪印=出来逛，✕=删）
 ```
 
-数据流：`PetController` 改 `PetState` → `PetView` 是其纯函数。加行为 = 加 `PetAction` case + 在 controller 驱动 + 在 view 渲染。换肤 = 改 `PetView.swift` 的 `Palette` 与 shape。
+数据流：`PetController` 改 `PetState` → `PetView` 是其纯函数。加行为 = 加 `PetAction` case + 在 controller 驱动 + 在 view 渲染。
+
+**多猫 colony**：一只猫 = 一个 `PetUnit`（独立窗口）。`avatar`（active pack）感知 agent、有气泡；`ambient`（roamer packs，≤4）只跑自主 roam/rest 循环。`AppDelegate.reconcileColony()` 按形象库的 active/roamer 增删氛围窗口；角色二选一（主猫不同时再做氛围猫）。换主猫形象 = 选角面板点缩略图；自定义形象包 = `~/.mochi/packs/`。改默认矢量 Mochi = `PetView.swift` 的 `Palette` 与 shape。
 
 ## Conventions
 

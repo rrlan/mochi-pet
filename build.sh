@@ -38,8 +38,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>$APP_NAME</string>
     <key>CFBundleDisplayName</key><string>Mochi 桌面宠物</string>
     <key>CFBundleIdentifier</key><string>com.yangran.mochi</string>
-    <key>CFBundleVersion</key><string>0.1.5</string>
-    <key>CFBundleShortVersionString</key><string>0.1.5</string>
+    <key>CFBundleVersion</key><string>0.2.0</string>
+    <key>CFBundleShortVersionString</key><string>0.2.0</string>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
@@ -55,6 +55,22 @@ PLIST
 
 echo "==> Copying app icon"
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
+
+# Bundle ready-to-use example appearance packs. They're seeded into the user's
+# library (~/.mochi/packs) on first launch so they're pickable out of the box.
+# Each pack ships only its role PNGs + walk/ frames + a friendly name.txt.
+echo "==> Bundling example appearance packs"
+PACKS_DST="$APP/Contents/Resources/packs"
+for SRC in "$ROOT"/appearances/*/; do
+  [[ -d "$SRC" ]] || continue
+  SLUG="$(basename "$SRC")"
+  mkdir -p "$PACKS_DST/$SLUG/walk"
+  cp "$SRC"*.png      "$PACKS_DST/$SLUG/"      2>/dev/null || true
+  cp "$SRC"walk/*.png "$PACKS_DST/$SLUG/walk/" 2>/dev/null || true
+  cp "$SRC"name.txt   "$PACKS_DST/$SLUG/"      2>/dev/null || true
+  rmdir "$PACKS_DST/$SLUG/walk" 2>/dev/null || true   # drop if the pack had no frames
+  echo "    + $SLUG ($(cat "$SRC"name.txt 2>/dev/null || basename "$SRC"))"
+done
 
 # Ad-hoc code-sign so macOS is happy launching it locally.
 echo "==> Ad-hoc signing"

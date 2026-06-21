@@ -11,11 +11,20 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let state = PetState()
-    private var window: PetWindow!
-    private var controller: PetController!
+    /// The working cat. The rest of the file refers to its window/state/brain
+    /// through the computed accessors below, so existing logic is unchanged.
+    private var avatar: PetUnit!
+    /// Ambient roaming cats, keyed by their pack slug.
+    private var ambients: [String: PetUnit] = [:]
+    private var colonyHidden = false
+
+    private var state: PetState { avatar.state }
+    private var window: PetWindow { avatar.window }
+    private var controller: PetController { avatar.controller }
+
     private var statusItem: NSStatusItem!
     private var actionPanel: ActionPanel!
+    private var appearancePicker: AppearancePicker!
     private var bridge: MochiBridge!
     private var monitor: AgentMonitor!
 
@@ -25,10 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let monitorDefaultsKey = "MochiSenseAgents"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        state.customAppearances = AppearanceStore.loadAll()
-        state.customWalkFrames = AppearanceStore.loadWalkFrames()
-        setupWindow()
-        controller = PetController(window: window, state: state)
+        AppearanceStore.prepareLibrary()   // migrate legacy slot + seed bundled packs
+        buildAvatar()
+        applyActiveAppearance()
 
         // Double-click action picker.
         actionPanel = ActionPanel()
@@ -36,6 +44,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         actionPanel.onOpenCodex = { [weak self] in self?.openCodex() }
         actionPanel.onOpenMemoFile = { [weak self] in self?.openMemoFile() }
         actionPanel.onSubmitMemo = { [weak self] text in self?.saveMemo(text) }
+
+        // Visual appearance "casting" panel (opened from the menu).
+        appearancePicker = AppearancePicker()
+        appearancePicker.onChange = { [weak self] in
+            self?.applyActiveAppearance()
+            self?.reconcileColony()       // worker change shifts who roams
+        }
+        appearancePicker.onCastingChange = { [weak self] in self?.reconcileColony() }
+        appearancePicker.onImportPack = { [weak self] in self?.importPackAction() }
+        appearancePicker.onNewFromImages = { [weak self] in self?.importAppearancesAction() }
+        appearancePicker.onCopyPrompt = { [weak self] in self?.copyImagePromptAction() }
+        appearancePicker.onOpenFolder = { [weak self] in self?.openAppearancesFolderAction() }
 
         controller.onDoubleClick = { [weak self] in self?.openActionPanel() }
 
@@ -59,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         controller.start()
+        reconcileColony()   // spawn ambient roaming cats from the roamer set
         setupStatusItem()
         controller.say("双击我选动作", duration: 4.0)
         checkForUpdates(manual: false)
@@ -66,6 +87,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openActionPanel() {
         actionPanel.present(above: window.frame)
+    }
+
+    private func openAppearancePicker() {
+        appearancePicker.present(near: window.frame)
+    }
+
+    /// Load the active pack's images into the state so the pet re-renders.
+    private func applyActiveAppearance() {
+        let loaded = AppearanceStore.loadActive()
+        state.customAppearances = loaded.appearances
+        state.customWalkFrames = loaded.walk
     }
 
     private func saveMemo(_ text: String) {
@@ -106,10 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.savePosition()
     }
 
-    // MARK: - Window
+    // MARK: - Window / colony
 
-    private func setupWindow() {
-        window = PetWindow()
+    private func buildAvatar() {
+        avatar = PetUnit(role: .avatar)
 
         // Restore the last position if it's still on-screen; otherwise start
         // centered near the bottom of whichever screen the cursor is on.
@@ -124,12 +156,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                           y: screen.minY + 80))
         }
 
-        let host = NSHostingView(rootView: PetView(state: state))
-        host.frame = window.container.bounds
-        host.autoresizingMask = [.width, .height]
-        window.container.addSubview(host)
-
         window.orderFrontRegardless()
+    }
+
+    /// Match the live ambient cats to the roamer set (≤ maxRoamers, excluding the
+    /// working cat so it isn't duplicated). Adds/removes windows as casting changes.
+    private func reconcileColony() {
+        let active = AppearanceStore.activeSlug
+        let installed = Set(AppearanceStore.installedPacks().map { $0.slug })
+        let desired = Array(AppearanceStore.roamerSlugs
+            .filter { $0 != active && installed.contains($0) }   // skip the worker + stale/deleted slugs
+            .prefix(AppearanceStore.maxRoamers))
+        let desiredSet = Set(desired)
+
+        for (slug, unit) in ambients where !desiredSet.contains(slug) {
+            unit.teardown()
+            ambients.removeValue(forKey: slug)
+        }
+        for slug in desired where ambients[slug] == nil {
+            let unit = PetUnit(role: .ambient)
+            unit.applyAppearance(slug: slug)
+            placeAmbient(unit.window)
+            if !colonyHidden { unit.window.orderFrontRegardless() }
+            unit.controller.start()
+            ambients[slug] = unit
+        }
+    }
+
+    /// Drop a new ambient cat at a random spot along the bottom of the cursor's
+    /// screen; from there its own brain takes over and it roams.
+    private func placeAmbient(_ window: PetWindow) {
+        let mouse = NSEvent.mouseLocation
+        let screen = (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main)?
+            .visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let maxX = max(screen.minX, screen.maxX - PetWindow.canvasSize.width)
+        let x = CGFloat.random(in: screen.minX...maxX)
+        let y = screen.minY + CGFloat.random(in: 40...160)
+        window.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     // MARK: - Status bar menu
@@ -141,24 +204,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Opening Claude/Codex and memos live on the double-click action panel
         // (and clicking a session bubble), so the menu stays focused on the pet.
         let menu = NSMenu()
-        menu.addItem(withTitle: "戳一下 Mochi", action: #selector(pokeAction), keyEquivalent: "")
-        menu.addItem(withTitle: "跟随鼠标", action: #selector(toggleFollowAction(_:)), keyEquivalent: "")
+        // Per-pet actions live on the pet itself now: single-click = 戳一下,
+        // right-click = 跟随鼠标 / 睡觉·起床. The menu keeps only app-level items.
 
-        let appearanceItem = NSMenuItem(title: "形象", action: nil, keyEquivalent: "")
-        let appearanceMenu = NSMenu()
-        appearanceMenu.addItem(withTitle: "导入形象包…", action: #selector(importPackAction), keyEquivalent: "")
-        appearanceMenu.addItem(withTitle: "导入形态图片…", action: #selector(importAppearancesAction), keyEquivalent: "")
-        appearanceMenu.addItem(withTitle: "打开形态文件夹", action: #selector(openAppearancesFolderAction), keyEquivalent: "")
-        appearanceMenu.addItem(withTitle: "恢复默认 Mochi", action: #selector(resetAppearanceAction), keyEquivalent: "")
-        appearanceMenu.items.forEach { $0.target = self }
-        appearanceItem.submenu = appearanceMenu
+        // Everything appearance-related lives in the picker now (tiles for switch/
+        // import/default + footer for prompt/folder), so this is just one item.
+        let appearanceItem = NSMenuItem(title: "形象…", action: #selector(openPickerAction), keyEquivalent: "")
+        appearanceItem.target = self
         menu.addItem(appearanceItem)
 
         let senseItem = NSMenuItem(title: "感知 AI 工作", action: #selector(toggleSenseAction(_:)), keyEquivalent: "")
         senseItem.state = (UserDefaults.standard.object(forKey: monitorDefaultsKey) as? Bool ?? true) ? .on : .off
         senseItem.target = self
         menu.addItem(senseItem)
-        menu.addItem(withTitle: "睡觉 / 起床", action: #selector(sleepAction), keyEquivalent: "")
+        // 睡觉/起床 moved to the pet's right-click menu (per cat).
         menu.addItem(withTitle: "隐藏 / 显示", action: #selector(toggleVisibleAction), keyEquivalent: "")
         menu.addItem(withTitle: "检查更新…", action: #selector(checkUpdateAction), keyEquivalent: "")
 
@@ -169,12 +228,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc private func toggleFollowAction(_ sender: NSMenuItem) {
-        let on = !controller.isFollowing
-        controller.setFollowing(on)
-        sender.state = on ? .on : .off
-    }
-
     @objc private func toggleSenseAction(_ sender: NSMenuItem) {
         let on = sender.state != .on
         sender.state = on ? .on : .off
@@ -182,6 +235,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if on { monitor.start() } else { monitor.stop() }
         controller.say(on ? "我会盯着你的 AI 啦 👀" : "好，不盯了", duration: 2.5)
     }
+
+    @objc private func openPickerAction() { openAppearancePicker() }
 
     @objc private func importPackAction() {
         let panel = NSOpenPanel()
@@ -193,13 +248,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.allowsMultipleSelection = false
 
         NSApp.activate(ignoringOtherApps: true)
+        appearancePicker.beginInternalDialog()
+        defer { appearancePicker.endInternalDialog() }
         guard panel.runModal() == .OK, let folder = panel.url else { return }
 
         do {
-            try AppearanceStore.importPack(from: folder)
-            state.customAppearances = AppearanceStore.loadAll()
-            state.customWalkFrames = AppearanceStore.loadWalkFrames()
-            controller.say("形象包装好啦~", duration: 2.5)
+            let pack = try AppearanceStore.importPack(from: folder)   // adds + activates
+            applyActiveAppearance()
+            reconcileColony()
+            appearancePicker.reload()
+            controller.say("「\(pack.name)」装好啦~", duration: 2.5)
         } catch {
             controller.say("这个文件夹里没找到形象图 😣", duration: 3)
         }
@@ -207,50 +265,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func importAppearancesAction() {
         let panel = NSOpenPanel()
-        panel.title = "选择 Mochi 的形态图片"
+        panel.title = "选择形态图片做一套形象包"
         panel.message = "可多选；文件名含 工作/休息/摸鱼/陪伴 会自动匹配，否则按顺序填入。"
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.png, .jpeg, .heic, .webP, .tiff, .gif]
 
         NSApp.activate(ignoringOtherApps: true)
+        appearancePicker.beginInternalDialog()
+        defer { appearancePicker.endInternalDialog() }
         guard panel.runModal() == .OK else { return }
 
         do {
-            let saved = try AppearanceStore.saveMany(from: panel.urls)
-            state.customAppearances.merge(saved) { _, new in new }
-            controller.say("形态包导入好啦~", duration: 2.5)
+            try AppearanceStore.newPack(fromImages: panel.urls)   // creates + activates
+            applyActiveAppearance()
+            reconcileColony()
+            appearancePicker.reload()
+            controller.say("形象包做好啦~", duration: 2.5)
         } catch {
             controller.say("这些图我读不了 😣", duration: 3)
         }
     }
 
+    @objc private func copyImagePromptAction() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(AppearancePrompt.imageGen, forType: .string)
+        controller.say("生图 Prompt 已复制，粘到生图模型就行~", duration: 3)
+    }
+
     @objc private func openAppearancesFolderAction() {
-        try? FileManager.default.createDirectory(at: AppearanceStore.appearancesDir,
+        try? FileManager.default.createDirectory(at: AppearanceStore.packsDir,
                                                  withIntermediateDirectories: true)
-        NSWorkspace.shared.open(AppearanceStore.appearancesDir)
-    }
-
-    @objc private func resetAppearanceAction() {
-        AppearanceStore.clear()
-        state.customAppearances = [:]
-        state.customWalkFrames = []
-        controller.say("恢复默认 Mochi 啦", duration: 2.5)
-    }
-
-    @objc private func pokeAction() {
-        controller.poke()
-    }
-
-    @objc private func sleepAction() {
-        controller.toggleSleep()
+        NSWorkspace.shared.open(AppearanceStore.packsDir)
     }
 
     @objc private func toggleVisibleAction() {
-        if window.isVisible {
-            window.orderOut(nil)
-        } else {
-            window.orderFrontRegardless()
+        colonyHidden.toggle()
+        let windows = [avatar.window] + ambients.values.map { $0.window }
+        for w in windows {
+            if colonyHidden { w.orderOut(nil) } else { w.orderFrontRegardless() }
         }
     }
 

@@ -26,6 +26,12 @@ final class PetContainerView: NSView {
     var onBubbleClick: ((BubbleTarget) -> Void)?
     var onDragStart: (() -> Void)?
     var onDragEnd: (() -> Void)?
+    /// Right-click "跟随鼠标" toggle. `isFollowing` drives the checkmark.
+    var onToggleFollow: (() -> Void)?
+    var isFollowing = false
+    /// Right-click sleep toggle. `isSleeping` drives the 睡觉/起床 label.
+    var onToggleSleep: (() -> Void)?
+    var isSleeping = false
     var isBubbleInteractive = false
     var bubbleTargets: [BubbleTarget] = []
     /// Full "title · activity" per bubble (same order as `bubbleTargets`), shown
@@ -80,6 +86,9 @@ final class PetContainerView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
+        // While following, the pet trails below the cursor, so the cursor hovers
+        // empty canvas — claim the whole window so a right-click there can stop it.
+        if isFollowing { return self }
         if petRect.contains(point) { return self }
         if bubbleTarget(at: point) != nil { return self }
         return nil
@@ -123,6 +132,36 @@ final class PetContainerView: NSView {
         didDrag = false
         mouseDownBubbleTarget = nil
     }
+
+    // MARK: - Right-click menu
+
+    /// Right-clicking the pet body offers the "跟随鼠标" toggle (it used to live
+    /// in the status-bar menu). Handled explicitly rather than via `menu(for:)`
+    /// because this is a borderless, non-activating panel. Built fresh each time
+    /// so the checkmark reflects the current state.
+    override func rightMouseDown(with event: NSEvent) {
+        // While following, any right-click on the window stops the chase at once
+        // (a pop-up menu is unusable when the pet is fleeing the cursor).
+        if isFollowing { onToggleFollow?(); return }
+        // Otherwise offer this pet's toggles (follow / sleep) on its body.
+        guard petRect.contains(convert(event.locationInWindow, from: nil)) else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        let menu = NSMenu()
+        let sleep = NSMenuItem(title: isSleeping ? "叫它起床" : "让它睡觉",
+                               action: #selector(toggleSleepFromMenu), keyEquivalent: "")
+        sleep.target = self
+        menu.addItem(sleep)
+        let follow = NSMenuItem(title: "跟随鼠标", action: #selector(toggleFollowFromMenu), keyEquivalent: "")
+        follow.target = self
+        follow.state = .off
+        menu.addItem(follow)
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func toggleFollowFromMenu() { onToggleFollow?() }
+    @objc private func toggleSleepFromMenu() { onToggleSleep?() }
 
     // MARK: - Hover tooltip
 
